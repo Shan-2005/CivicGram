@@ -1,0 +1,15 @@
+[
+  "title (string, required: true)",
+  "description (string, required: true)",
+  "category (string, required: true)",
+  "image_url (string, required: false)",
+  "longitude (double, required: true)",
+  "latitude (double, required: true)",
+  "status (string, required: true)",
+  "trust_score (double, required: true)",
+  "user_id (string, required: true)",
+  "upvotes (integer, required: true)",
+  "comment_count (integer, required: true)",
+  "is_verified (boolean, required: true)",
+  "priority (string, required: true)"
+]

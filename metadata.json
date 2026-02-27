@@ -1,0 +1,8 @@
+{
+  "name": "CivicGram",
+  "description": "A social-media based civic issue reporting platform with Instagram-style feed and Snapchat-style heat maps, powered by AI for verification and prioritization.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ]
+}
