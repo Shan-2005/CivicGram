@@ -172,7 +172,7 @@ const LoginView = ({ onLogin }: { onLogin: () => void }) => {
   );
 };
 
-const IssueCard = ({ issue, onUpvote, onDelete, onProfileClick }: { issue: Issue, onUpvote: (id: string | number) => void, onDelete?: (id: string | number) => void, onProfileClick?: (username: string) => void }) => {
+const IssueCard = ({ issue, onUpvote, onDelete, onProfileClick }: { key?: React.Key, issue: Issue, onUpvote: (id: string | number) => void, onDelete?: (id: string | number) => void, onProfileClick?: (username: string) => void }) => {
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -272,7 +272,7 @@ const IssueCard = ({ issue, onUpvote, onDelete, onProfileClick }: { issue: Issue
   );
 };
 
-const FeedView = ({ issues, onUpvote, user, onProfileClick }: { issues: Issue[], onUpvote: (id: string | number) => void, user: any, onProfileClick: (username: string) => void }) => {
+const FeedView = ({ issues, onUpvote, user, onProfileClick }: { key?: React.Key, issues: Issue[], onUpvote: (id: string | number) => void, user: any, onProfileClick: (username: string) => void }) => {
   const [activeCategory, setActiveCategory] = useState<string>('All');
 
   const filteredIssues = activeCategory === 'All'
@@ -329,7 +329,7 @@ const FeedView = ({ issues, onUpvote, user, onProfileClick }: { issues: Issue[],
   );
 };
 
-const CreateView = ({ onIssueCreated, user, initialLocation }: { onIssueCreated: (issue: any, file?: File | null) => void, user: any, initialLocation: { lat: number, lng: number } | null }) => {
+const CreateView = ({ onIssueCreated, user, initialLocation }: { key?: React.Key, onIssueCreated: (issue: any, file?: File | null) => void, user: any, initialLocation: { lat: number, lng: number } | null }) => {
   const [step, setStep] = useState(1);
   const [image, setImage] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -657,7 +657,7 @@ const CreateView = ({ onIssueCreated, user, initialLocation }: { onIssueCreated:
   );
 };
 
-const HeatMapView = ({ issues, onProfileClick, userLocation }: { issues: Issue[], onProfileClick: (username: string) => void, userLocation: { lat: number, lng: number } | null }) => {
+const HeatMapView = ({ issues, onProfileClick, userLocation }: { key?: React.Key, issues: Issue[], onProfileClick: (username: string) => void, userLocation: { lat: number, lng: number } | null }) => {
   const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null);
   const [showHeatMap, setShowHeatMap] = useState(false);
 
@@ -751,7 +751,7 @@ const HeatMapView = ({ issues, onProfileClick, userLocation }: { issues: Issue[]
   );
 };
 
-const DashboardView = ({ issues, onStatusUpdate, onProfileClick }: { issues: Issue[], onStatusUpdate: (id: string | number, status: Issue['status']) => void, onProfileClick: (username: string) => void }) => {
+const DashboardView = ({ issues, onStatusUpdate, onProfileClick }: { key?: React.Key, issues: Issue[], onStatusUpdate: (id: string | number, status: Issue['status']) => void, onProfileClick: (username: string) => void }) => {
   return (
     <div className="min-h-screen bg-gray-50 pb-20 pt-4 md:pt-24 md:pl-24">
       <div className="max-w-6xl mx-auto px-4">
@@ -859,7 +859,7 @@ const DashboardView = ({ issues, onStatusUpdate, onProfileClick }: { issues: Iss
   );
 };
 
-const ProfileView = ({ issues, onUpvote, user, onLogout, onDeleteIssue, onProfileClick, isPublic = false, targetUser = null }: { issues: Issue[], onUpvote: (id: string | number) => void, user: any, onLogout?: () => void, onDeleteIssue?: (id: string | number) => void, onProfileClick: (username: string) => void, isPublic?: boolean, targetUser?: any }) => {
+const ProfileView = ({ issues, onUpvote, user, onLogout, onDeleteIssue, onProfileClick, isPublic = false, targetUser = null }: { key?: React.Key, issues: Issue[], onUpvote: (id: string | number) => void, user: any, onLogout?: () => void, onDeleteIssue?: (id: string | number) => void, onProfileClick: (username: string) => void, isPublic?: boolean, targetUser?: any }) => {
   const [activeTab, setActiveTab] = useState<'REPORTS' | 'LIKED' | 'FOLLOWING'>('REPORTS');
   const displayUser = isPublic ? targetUser : user;
   const username = displayUser?.name || displayUser?.user_id || (typeof displayUser === 'string' ? displayUser : 'User');
