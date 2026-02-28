@@ -1330,10 +1330,9 @@ export default function App() {
           // @ts-ignore
           finalImageUrl = `${import.meta.env.VITE_APPWRITE_ENDPOINT}/storage/buckets/${BUCKET_ID}/files/${uploadedFile.$id}/view?project=${import.meta.env.VITE_APPWRITE_PROJECT_ID}`;
           console.log("Image uploaded to Appwrite Storage:", finalImageUrl);
-        } catch (uploadError) {
+        } catch (uploadError: any) {
           console.error("Failed to upload image to Storage:", uploadError);
-          // Fallback or alert? We'll try to proceed with whatever URL we have, or alert
-          alert("Failed to upload image to our cloud storage. The report might not have a photo.");
+          alert(`Failed to upload image: ${uploadError?.message || JSON.stringify(uploadError)}`);
         }
       }
 
