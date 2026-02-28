@@ -18,7 +18,14 @@ import {
   X,
   ChevronRight,
   Filter,
-  Navigation
+  Navigation,
+  Droplets,
+  Trash2,
+  Shield,
+  Zap,
+  Trees,
+  Info,
+  Car as Road
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Issue, ViewType } from './types';
@@ -331,7 +338,18 @@ const CreateView = ({ onIssueCreated, user, initialLocation }: { onIssueCreated:
   const [caption, setCaption] = useState('');
   const [location, setLocation] = useState('');
   const [coordinates, setCoordinates] = useState<{ lat: number, lng: number } | null>(initialLocation);
+  const [selectedCategory, setSelectedCategory] = useState<string>('Other');
   const [verificationError, setVerificationError] = useState<string | null>(null);
+
+  const categories = [
+    { id: 'Roads', icon: <Road size={14} />, color: 'bg-amber-100 text-amber-600' },
+    { id: 'Garbage', icon: <Trash2 size={14} />, color: 'bg-green-100 text-green-600' },
+    { id: 'Water', icon: <Droplets size={14} />, color: 'bg-blue-100 text-blue-600' },
+    { id: 'Safety', icon: <Shield size={14} />, color: 'bg-red-100 text-red-600' },
+    { id: 'Power', icon: <Zap size={14} />, color: 'bg-yellow-100 text-yellow-600' },
+    { id: 'Parks', icon: <Trees size={14} />, color: 'bg-emerald-100 text-emerald-600' },
+    { id: 'Other', icon: <Info size={14} />, color: 'bg-gray-100 text-gray-600' }
+  ];
 
   const handleLocateMe = () => {
     if (navigator.geolocation) {
@@ -370,14 +388,13 @@ const CreateView = ({ onIssueCreated, user, initialLocation }: { onIssueCreated:
     setLoading(true);
     setVerificationError(null);
     try {
-      const result = await verifyImageAgainstDescription(image, caption, location);
+      const result = await verifyImageAgainstDescription(image, caption, location, selectedCategory);
       if (!result.isValid) {
-        setVerificationError("images dose not match the given description: " + result.reason);
+        setVerificationError(`Images don't match: ${result.reason} (Similarity: ${result.similarity_score}%)`);
         setLoading(false);
         return;
       }
       setAnalysis(result);
-      // Use AI generated caption if it's better, or keep user's
       setStep(4);
     } catch (error) {
       console.error(error);
@@ -439,9 +456,29 @@ const CreateView = ({ onIssueCreated, user, initialLocation }: { onIssueCreated:
                   <textarea
                     value={caption}
                     onChange={(e) => setCaption(e.target.value)}
-                    className="w-full bg-gray-50 border-none rounded-2xl p-4 text-sm focus:ring-2 focus:ring-teal-500 h-32 resize-none"
+                    className="w-full bg-gray-50 border-none rounded-2xl p-4 text-sm focus:ring-2 focus:ring-teal-500 h-24 resize-none"
                     placeholder="Describe the issue you're seeing..."
                   />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 block">Category</label>
+                  <div className="flex flex-wrap gap-2">
+                    {categories.map((cat) => (
+                      <button
+                        key={cat.id}
+                        onClick={() => setSelectedCategory(cat.id)}
+                        className={cn(
+                          "px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all border",
+                          selectedCategory === cat.id
+                            ? "bg-teal-600 text-white border-teal-600 shadow-md scale-105"
+                            : "bg-gray-50 text-gray-400 border-transparent hover:border-gray-200"
+                        )}
+                      >
+                        {cat.icon}
+                        {cat.id}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div>
                   <div className="flex justify-between items-center mb-2">
@@ -579,10 +616,20 @@ const CreateView = ({ onIssueCreated, user, initialLocation }: { onIssueCreated:
                 </div>
               </div>
 
-              <div className="bg-blue-50 p-4 rounded-2xl">
-                <p className="text-[10px] font-bold text-blue-400 uppercase tracking-wider mb-2">Final Review</p>
-                <p className="text-sm text-blue-900 font-medium italic">"{analysis.description}"</p>
+              <div className="bg-teal-50 p-4 rounded-2xl border border-teal-100">
+                <div className="flex justify-between items-center mb-2">
+                  <p className="text-[10px] font-bold text-teal-600 uppercase tracking-wider">Verified Match</p>
+                  <span className="text-xs font-black text-teal-700">{analysis.similarity_score}% Confidence</span>
+                </div>
+                <p className="text-sm text-teal-900 font-medium italic">"{analysis.description}"</p>
               </div>
+
+              {analysis.visual_evidence && (
+                <div className="bg-gray-50 p-4 rounded-2xl">
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Visual Evidence Identified</p>
+                  <p className="text-xs text-gray-600 leading-relaxed">{analysis.visual_evidence}</p>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-gray-50 p-4 rounded-2xl">
@@ -612,14 +659,39 @@ const CreateView = ({ onIssueCreated, user, initialLocation }: { onIssueCreated:
 
 const HeatMapView = ({ issues, onProfileClick, userLocation }: { issues: Issue[], onProfileClick: (username: string) => void, userLocation: { lat: number, lng: number } | null }) => {
   const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null);
+  const [showHeatMap, setShowHeatMap] = useState(false);
 
   return (
     <div className="h-screen w-full bg-gray-50 relative overflow-hidden md:pl-24">
+      <div className="absolute top-20 left-6 md:left-30 z-[1000] flex gap-2">
+        <div className="bg-white/90 backdrop-blur-xl p-1 rounded-2xl shadow-xl border border-white flex">
+          <button
+            onClick={() => setShowHeatMap(false)}
+            className={cn(
+              "px-4 py-2 rounded-xl text-xs font-bold transition-all",
+              !showHeatMap ? "bg-teal-600 text-white shadow-lg" : "text-gray-400 hover:bg-gray-100"
+            )}
+          >
+            Markers
+          </button>
+          <button
+            onClick={() => setShowHeatMap(true)}
+            className={cn(
+              "px-4 py-2 rounded-xl text-xs font-bold transition-all",
+              showHeatMap ? "bg-teal-600 text-white shadow-lg" : "text-gray-400 hover:bg-gray-100"
+            )}
+          >
+            Heat Map
+          </button>
+        </div>
+      </div>
+
       <MapComponent
         issues={issues}
         onMarkerClick={(issue) => setSelectedIssue(issue)}
         center={userLocation || { lat: 37.7749, lng: -122.4194 }}
         userLocation={userLocation}
+        showHeatMap={showHeatMap}
         zoom={13}
       />
 

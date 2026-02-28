@@ -2,6 +2,8 @@ import React, { useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+// @ts-ignore
+import { HeatmapLayer } from 'react-leaflet-heatmap-layer-v3';
 import { Issue } from '../types';
 
 // Fix for default marker icons in Leaflet when using Vite/React
@@ -28,6 +30,7 @@ interface MapComponentProps {
     interactive?: boolean;
     selectedLocation?: { lat: number; lng: number } | null;
     userLocation?: { lat: number; lng: number } | null;
+    showHeatMap?: boolean;
 }
 
 // Internal component to handle center updates and clicks
@@ -55,7 +58,8 @@ const MapComponent = ({
     zoom = 12,
     interactive = true,
     selectedLocation = null,
-    userLocation = null
+    userLocation = null,
+    showHeatMap = false
 }: MapComponentProps) => {
 
     const userIcon = L.divIcon({
@@ -82,22 +86,39 @@ const MapComponent = ({
 
                 <MapEvents onMapClick={onMapClick} center={[center.lat, center.lng] as [number, number]} zoom={zoom} />
 
-                {issues.map((issue) => (
-                    <Marker
-                        key={issue.id}
-                        position={[issue.latitude, issue.longitude] as [number, number]}
-                        eventHandlers={{
-                            click: () => onMarkerClick?.(issue),
+                {showHeatMap ? (
+                    <HeatmapLayer
+                        points={issues}
+                        longitudeExtractor={(issue: Issue) => issue.longitude}
+                        latitudeExtractor={(issue: Issue) => issue.latitude}
+                        intensityExtractor={(issue: Issue) => {
+                            if (issue.priority === 'CRITICAL') return 1.0;
+                            if (issue.priority === 'HIGH') return 0.7;
+                            if (issue.priority === 'MEDIUM') return 0.4;
+                            return 0.2;
                         }}
-                    >
-                        <Popup>
-                            <div className="p-1">
-                                <p className="font-bold text-sm mb-1">{issue.title}</p>
-                                <p className="text-xs text-teal-600 font-bold uppercase tracking-wider">Priority: {issue.priority}</p>
-                            </div>
-                        </Popup>
-                    </Marker>
-                ))}
+                        radius={25}
+                        blur={15}
+                        max={1.0}
+                    />
+                ) : (
+                    issues.map((issue) => (
+                        <Marker
+                            key={issue.id}
+                            position={[issue.latitude, issue.longitude] as [number, number]}
+                            eventHandlers={{
+                                click: () => onMarkerClick?.(issue),
+                            }}
+                        >
+                            <Popup>
+                                <div className="p-1">
+                                    <p className="font-bold text-sm mb-1">{issue.title}</p>
+                                    <p className="text-xs text-teal-600 font-bold uppercase tracking-wider">Priority: {issue.priority}</p>
+                                </div>
+                            </Popup>
+                        </Marker>
+                    ))
+                )}
 
                 {selectedLocation && (
                     <Marker position={[selectedLocation.lat, selectedLocation.lng] as [number, number]} icon={DefaultIcon}>

@@ -12,38 +12,50 @@ export interface VerificationResult {
   title: string;
   description: string;
   trust_score: number;
+  similarity_score: number;
+  visual_evidence: string;
 }
 
 export const verifyImageAgainstDescription = async (
   base64Image: string,
   userDescription: string,
-  userLocation: string
+  userLocation: string,
+  suggestedCategory: string = ""
 ): Promise<VerificationResult> => {
   try {
-    // Remove the data:image/jpeg;base64, part if present
     const base64Data = base64Image.split(',')[1] || base64Image;
 
     const prompt = `
-      Analyze this image of a civic issue. 
-      User's description: "${userDescription}"
-      User's location: "${userLocation}"
+      You are a Civic Inspection AI. Follow this two-step process to verify the user's report.
 
-      Task:
-      1. Verify if the image matches the description. If the user says "pothole" but it's a "cat", it's invalid.
-      2. Categorize the issue (Roads, Garbage, Water, Safety, Power, Parks, or Other).
-      3. Determine priority (CRITICAL, HIGH, MEDIUM, LOW).
-      4. Generate a concise title and a detailed description based on visual evidence.
-      5. Provide a trust score (0.0 to 1.0) based on how well it matches and image quality.
+      CONTEXT:
+      - User's Description: "${userDescription}"
+      - User's Location: "${userLocation}"
+      - User's Suggested Category: "${suggestedCategory}"
 
-      Respond ONLY with a JSON object in this format:
+      STEP 1: OBJECTIVE VISUAL EXTRACTION
+      - Describe EXACTLY what is visible in the provided image.
+      - Be clinical and detailed. Avoid assuming it's a "civic issue" unless clearly visible.
+      - Focus on: Objects, Textures, Damage, Lighting, and Background context.
+
+      STEP 2: SEMANTIC COMPARISON & LOGIC
+      - Compare your "Objective Visual Extraction" with the User's inputs.
+      - Calculate a Similarity Score (0-100%): How closely does the visual evidence support the claim?
+      - If Similarity < 70%, set isValid to false and explain what is missing.
+      - Final Categorization: Choose the most accurate from (Roads, Garbage, Water, Safety, Power, Parks, or Other). Use the "Suggested Category" as a strong hint if it fits.
+      - Set Priority: CRITICAL, HIGH, MEDIUM, LOW.
+
+      Response Format (JSON ONLY):
       {
         "isValid": boolean,
-        "reason": "explanation if invalid, otherwise empty",
-        "category": "category name",
+        "reason": "Clear explanation of match/mismatch",
+        "category": "Category name",
         "priority": "PRIORITY_LEVEL",
-        "title": "concise title",
-        "description": "detailed visual description",
-        "trust_score": 0.95
+        "title": "Concise, professional title",
+        "description": "Professional summary of the verified issue",
+        "trust_score": 0.0-1.0 (based on image quality and evidence consistency),
+        "similarity_score": 0-100,
+        "visual_evidence": "List of key visual features identified"
       }
     `;
 
@@ -60,22 +72,29 @@ export const verifyImageAgainstDescription = async (
     const response = await result.response;
     const text = response.text();
 
-    // Extract JSON from the response text (it might be wrapped in markdown code blocks)
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error("Failed to parse AI response");
 
-    return JSON.parse(jsonMatch[0]);
+    const parsed: VerificationResult = JSON.parse(jsonMatch[0]);
+
+    // Safety check for threshold
+    if (parsed.similarity_score < 70) {
+      parsed.isValid = false;
+    }
+
+    return parsed;
   } catch (error) {
     console.error("AI Verification failed:", error);
-    // Fallback for demo or failure
     return {
       isValid: true,
-      reason: "",
+      reason: "Verification system timeout - proceeding with caution.",
       category: "Other",
       priority: "MEDIUM",
-      title: "Civic Issue Reported",
+      title: "Manual Verification Required",
       description: userDescription,
-      trust_score: 0.5
+      trust_score: 0.5,
+      similarity_score: 50,
+      visual_evidence: "Unverified due to system error"
     };
   }
 };
