@@ -2,8 +2,6 @@ import { HfInference } from "@huggingface/inference";
 
 // @ts-ignore
 const hf = new HfInference(import.meta.env.VITE_HF_TOKEN || "");
-// @ts-ignore
-const GOOGLE_VISION_API_KEY = import.meta.env.VITE_GOOGLE_VISION_API_KEY || "";
 
 export interface VerificationResult {
   isValid: boolean;
@@ -24,42 +22,23 @@ export const verifyImageAgainstDescription = async (
   suggestedCategory: string = ""
 ): Promise<VerificationResult> => {
   try {
-    const base64Data = base64Image.split(',')[1] || base64Image;
-
-    // Phase 1: Google Cloud Vision API for objective visual extraction
+    // Phase 1: Hugging Face Image Captioning (Free Tier VLM)
     let visualExtraction = "No visual extraction available.";
 
-    if (GOOGLE_VISION_API_KEY) {
-      const visionApiUrl = `https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_VISION_API_KEY}`;
-      const visionRes = await fetch(visionApiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          requests: [{
-            image: { content: base64Data },
-            features: [
-              { type: 'LABEL_DETECTION', maxResults: 15 },
-              { type: 'OBJECT_LOCALIZATION', maxResults: 10 },
-              { type: 'TEXT_DETECTION' }
-            ]
-          }]
-        })
+    try {
+      // Convert base64 to Blob for HF API
+      const res = await fetch(base64Image);
+      const blob = await res.blob();
+
+      const captionRes = await hf.imageToText({
+        model: 'Salesforce/blip-image-captioning-large',
+        data: blob
       });
 
-      if (visionRes.ok) {
-        const visionData = await visionRes.json();
-        const annotationInfo = visionData.responses?.[0] || {};
-
-        const labels = annotationInfo.labelAnnotations?.map((l: any) => l.description).join(", ") || "None";
-        const objects = annotationInfo.localizedObjectAnnotations?.map((o: any) => o.name).join(", ") || "None";
-        const textInfo = annotationInfo.fullTextAnnotation?.text?.replace(/\n/g, " ") || "None";
-
-        visualExtraction = `Labels: ${labels}\nObjects Detected: ${objects}\nText Detected: ${textInfo}`;
-      } else {
-        console.warn("Google Vision API error", await visionRes.text());
-      }
-    } else {
-      console.warn("No Google Vision API Key configured.");
+      visualExtraction = `Visual Description: ${captionRes.generated_text}`;
+      console.log("HF Phase 1 Extraction:", visualExtraction);
+    } catch (captionErr: any) {
+      console.warn("Hugging Face Image Captioning error:", captionErr);
     }
 
     // Phase 2: Hugging Face NLP for Logic & JSON synthesis
@@ -98,7 +77,7 @@ export const verifyImageAgainstDescription = async (
 
     // Using a reliable instruction tuned model that returns good JSON on HF free tier
     const result = await hf.chatCompletion({
-      model: "mistralai/Mistral-Nemo-Instruct-2407",
+      model: "Qwen/Qwen2.5-72B-Instruct",
       messages: [
         { role: "system", content: "You are a helpful JSON-only output assistant." },
         { role: "user", content: prompt }
