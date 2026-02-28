@@ -1553,8 +1553,10 @@ export default function App() {
           await databases.createDocument(DATABASE_ID, ADMINS_COLLECTION_ID, 'unique()', {
             email: session.email, name: session.name, status: 'pending', requested_at: new Date().toISOString()
           });
-        } catch (e) {
-          console.error('Failed to create admin request', e);
+          console.log("Successfully created admin request in Appwrite");
+        } catch (e: any) {
+          console.error('Failed to create admin request:', e);
+          alert(`Failed to save admin request to cloud. Error: ${e.message}`);
         }
         setAdminPending(true);
       }
