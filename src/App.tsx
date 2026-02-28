@@ -1490,11 +1490,15 @@ export default function App() {
       const session = await account.get();
       setUser(session);
 
-      // Check if user logged in via the admin button
+      // Check if user logged in via the admin button (fresh OAuth redirect)
       const loginMode = localStorage.getItem('civicgram_login_mode');
       if (loginMode === 'admin') {
         localStorage.removeItem('civicgram_login_mode');
         const adminStatus = isAdminUser(session.email);
+
+        // Always set the active flag when they log in via Admin button
+        localStorage.setItem('civicgram_admin_active', session.email);
+
         if (adminStatus === 'super' || adminStatus === 'approved') {
           setIsAdminMode(true);
         } else if (adminStatus === 'pending') {
@@ -1502,9 +1506,25 @@ export default function App() {
         } else {
           // New admin request — add to pending list
           const admins = getAdmins();
-          admins.push({ email: session.email, name: session.name, status: 'pending', requested_at: new Date().toISOString() });
-          saveAdmins(admins);
+          if (!admins.find(a => a.email === session.email)) {
+            admins.push({ email: session.email, name: session.name, status: 'pending', requested_at: new Date().toISOString() });
+            saveAdmins(admins);
+          }
           setAdminPending(true);
+        }
+      } else {
+        // Page reload — check if this user was previously in admin mode
+        const savedAdminEmail = localStorage.getItem('civicgram_admin_active');
+        if (savedAdminEmail && savedAdminEmail === session.email) {
+          const adminStatus = isAdminUser(session.email);
+          if (adminStatus === 'super' || adminStatus === 'approved') {
+            setIsAdminMode(true);
+          } else if (adminStatus === 'pending') {
+            setAdminPending(true);
+          } else {
+            // Logged in as admin but not in the list? Should be pending.
+            setAdminPending(true);
+          }
         }
       }
     } catch (error) {
@@ -1580,6 +1600,8 @@ export default function App() {
       setUser(null);
       setIsAdminMode(false);
       setAdminPending(false);
+      localStorage.removeItem('civicgram_admin_active');
+      localStorage.removeItem('civicgram_login_mode');
       setView('FEED');
     } catch (error) {
       console.error("Logout failed:", error);
