@@ -314,23 +314,34 @@ const FeedView = ({ issues, onUpvote, user, onProfileClick, onCommentClick }: { 
 
       {/* Stories-like Categories */}
       <div className="flex gap-4 overflow-x-auto px-4 mb-6 no-scrollbar">
-        {['All', 'Roads', 'Garbage', 'Water', 'Safety', 'Power', 'Parks'].map((cat) => (
+        {([
+          { name: 'All', icon: <Navigation size={24} /> },
+          { name: 'Roads', icon: <Road size={24} /> },
+          { name: 'Garbage', icon: <Trash2 size={24} /> },
+          { name: 'Water', icon: <Droplets size={24} /> },
+          { name: 'Safety', icon: <Shield size={24} /> },
+          { name: 'Power', icon: <Zap size={24} /> },
+          { name: 'Parks', icon: <Trees size={24} /> },
+        ] as const).map((cat) => (
           <button
-            key={cat}
-            onClick={() => setActiveCategory(cat)}
+            key={cat.name}
+            onClick={() => setActiveCategory(cat.name)}
             className="flex flex-col items-center gap-1 flex-shrink-0 group"
           >
             <div className={cn(
               "w-16 h-16 rounded-full p-[2px] transition-all",
-              activeCategory === cat ? "bg-gradient-to-tr from-yellow-400 via-red-500 to-purple-600 scale-110" : "bg-gray-200"
+              activeCategory === cat.name ? "bg-gradient-to-tr from-yellow-400 via-red-500 to-purple-600 scale-110" : "bg-gray-200"
             )}>
               <div className="w-full h-full rounded-full bg-white p-[2px]">
-                <div className="w-full h-full rounded-full bg-gray-100 flex items-center justify-center text-gray-400 group-hover:text-teal-600 transition-colors">
-                  <MapPin size={24} />
+                <div className={cn(
+                  "w-full h-full rounded-full flex items-center justify-center transition-colors",
+                  activeCategory === cat.name ? "bg-teal-50 text-teal-600" : "bg-gray-100 text-gray-400 group-hover:text-teal-600"
+                )}>
+                  {cat.icon}
                 </div>
               </div>
             </div>
-            <span className={cn("text-[10px] font-medium", activeCategory === cat ? "text-teal-600 font-bold" : "text-gray-500")}>{cat}</span>
+            <span className={cn("text-[10px] font-medium", activeCategory === cat.name ? "text-teal-600 font-bold" : "text-gray-500")}>{cat.name}</span>
           </button>
         ))}
       </div>
