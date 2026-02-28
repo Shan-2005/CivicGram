@@ -1040,7 +1040,10 @@ const AdminDashboardView = ({ issues, user, onStatusUpdate, onLogout }: {
   const assignMunicipality = async (issueId: string | number, muniName: string) => {
     try {
       await databases.updateDocument(DATABASE_ID, COLLECTION_ID, issueId as string, { assigned_municipality: muniName });
-    } catch { console.warn('Municipality assignment failed.'); alert('Assignment failed'); }
+    } catch (e: any) {
+      console.warn('Municipality assignment failed.', e);
+      alert(`Assignment failed: ${e.message}`);
+    }
   };
 
   const tabs: { id: AdminViewTab, label: string, icon: React.ReactNode }[] = [
