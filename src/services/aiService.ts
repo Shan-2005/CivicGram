@@ -1,8 +1,9 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { HfInference } from "@huggingface/inference";
 
 // @ts-ignore
-const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || "");
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+const hf = new HfInference(import.meta.env.VITE_HF_TOKEN || "");
+// @ts-ignore
+const GOOGLE_VISION_API_KEY = import.meta.env.VITE_GOOGLE_VISION_API_KEY || "";
 
 export interface VerificationResult {
   isValid: boolean;
@@ -25,27 +26,63 @@ export const verifyImageAgainstDescription = async (
   try {
     const base64Data = base64Image.split(',')[1] || base64Image;
 
+    // Phase 1: Google Cloud Vision API for objective visual extraction
+    let visualExtraction = "No visual extraction available.";
+
+    if (GOOGLE_VISION_API_KEY) {
+      const visionApiUrl = `https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_VISION_API_KEY}`;
+      const visionRes = await fetch(visionApiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requests: [{
+            image: { content: base64Data },
+            features: [
+              { type: 'LABEL_DETECTION', maxResults: 15 },
+              { type: 'OBJECT_LOCALIZATION', maxResults: 10 },
+              { type: 'TEXT_DETECTION' }
+            ]
+          }]
+        })
+      });
+
+      if (visionRes.ok) {
+        const visionData = await visionRes.json();
+        const annotationInfo = visionData.responses?.[0] || {};
+
+        const labels = annotationInfo.labelAnnotations?.map((l: any) => l.description).join(", ") || "None";
+        const objects = annotationInfo.localizedObjectAnnotations?.map((o: any) => o.name).join(", ") || "None";
+        const textInfo = annotationInfo.fullTextAnnotation?.text?.replace(/\n/g, " ") || "None";
+
+        visualExtraction = `Labels: ${labels}\nObjects Detected: ${objects}\nText Detected: ${textInfo}`;
+      } else {
+        console.warn("Google Vision API error", await visionRes.text());
+      }
+    } else {
+      console.warn("No Google Vision API Key configured.");
+    }
+
+    // Phase 2: Hugging Face NLP for Logic & JSON synthesis
     const prompt = `
-      You are a Civic Inspection AI. Follow this two-step process to verify the user's report.
+      You are a Civic Inspection AI.
+      Follow this logic to verify the user's report based on the provided Visual Evidence.
+
+      VISUAL EVIDENCE (Extracted automatically):
+      ${visualExtraction}
 
       CONTEXT:
       - User's Description: "${userDescription}"
       - User's Location: "${userLocation}"
       - User's Suggested Category: "${suggestedCategory}"
 
-      STEP 1: OBJECTIVE VISUAL EXTRACTION
-      - Describe EXACTLY what is visible in the provided image.
-      - Be clinical and detailed. Avoid assuming it's a "civic issue" unless clearly visible.
-      - Focus on: Objects, Textures, Damage, Lighting, and Background context.
-
-      STEP 2: SEMANTIC COMPARISON & LOGIC
-      - Compare your "Objective Visual Extraction" with the User's inputs.
-      - Calculate a Similarity Score (0-100%): How closely does the visual evidence support the claim?
-      - If Similarity < 70%, set isValid to false and explain what is missing.
-      - Final Categorization: Choose the most accurate from (Roads, Garbage, Water, Safety, Power, Parks, or Other). Use the "Suggested Category" as a strong hint if it fits.
+      TASK:
+      - Compare the VISUAL EVIDENCE with the User's inputs.
+      - Calculate a Similarity Score (0-100%): How closely does the visual evidence support the user's claim?
+      - If Similarity < 70%, set isValid to false and explain what is missing in the "reason" field.
+      - Set Category: Choose the most accurate from (Roads, Garbage, Water, Safety, Power, Parks, or Other).
       - Set Priority: CRITICAL, HIGH, MEDIUM, LOW.
 
-      Response Format (JSON ONLY):
+      YOU MUST RESPOND ONLY IN VALID RAW JSON FORMAT, EXACTLY MATCHING THIS STRUCTURE. DO NOT ADD MARKDOWN OR EXTRA TEXT:
       {
         "isValid": boolean,
         "reason": "Clear explanation of match/mismatch",
@@ -53,29 +90,41 @@ export const verifyImageAgainstDescription = async (
         "priority": "PRIORITY_LEVEL",
         "title": "Concise, professional title",
         "description": "Professional summary of the verified issue",
-        "trust_score": 0.0-1.0 (based on image quality and evidence consistency),
+        "trust_score": 0.0-1.0,
         "similarity_score": 0-100,
-        "visual_evidence": "List of key visual features identified"
+        "visual_evidence": "List of key visual features identified from the VISUAL EVIDENCE"
       }
     `;
 
-    const result = await model.generateContent([
-      prompt,
-      {
-        inlineData: {
-          data: base64Data,
-          mimeType: "image/jpeg",
-        },
-      },
-    ]);
+    // Using a reliable instruction tuned model that returns good JSON on HF free tier
+    const result = await hf.chatCompletion({
+      model: "mistralai/Mistral-Nemo-Instruct-2407",
+      messages: [
+        { role: "system", content: "You are a helpful JSON-only output assistant." },
+        { role: "user", content: prompt }
+      ],
+      max_tokens: 800,
+      temperature: 0.1,
+    });
 
-    const response = await result.response;
-    const text = response.text();
+    const reply = result.choices[0].message.content || "";
 
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error("Failed to parse AI response");
+    // Clean up potential markdown formatting wrapping the JSON
+    let cleanJson = reply.trim();
+    if (cleanJson.startsWith('```json')) cleanJson = cleanJson.substring(7);
+    if (cleanJson.startsWith('```')) cleanJson = cleanJson.substring(3);
+    if (cleanJson.endsWith('```')) cleanJson = cleanJson.substring(0, cleanJson.length - 3);
+    cleanJson = cleanJson.trim();
 
-    const parsed: VerificationResult = JSON.parse(jsonMatch[0]);
+    let parsed: VerificationResult;
+    try {
+      parsed = JSON.parse(cleanJson);
+    } catch (e) {
+      // Fallback robust json extraction
+      const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error("Could not extract JSON from HF response");
+      parsed = JSON.parse(jsonMatch[0]);
+    }
 
     // Safety check for threshold
     if (parsed.similarity_score < 70) {
@@ -87,7 +136,7 @@ export const verifyImageAgainstDescription = async (
     console.error("AI Verification failed:", error);
     return {
       isValid: true,
-      reason: "Verification system timeout - proceeding with caution.",
+      reason: "Verification system timeout or configuration missing - proceeding with caution.",
       category: "Other",
       priority: "MEDIUM",
       title: "Manual Verification Required",
@@ -99,8 +148,6 @@ export const verifyImageAgainstDescription = async (
   }
 };
 
-// Keeping the original function for backward compatibility if needed, 
-// but it will now use the same logic if possible.
 export const analyzeIssueImage = async (base64Image: string) => {
   const result = await verifyImageAgainstDescription(base64Image, "General civic issue", "Unknown location");
   return {
