@@ -15,6 +15,7 @@ export interface Issue {
   comment_count: number;
   created_at: string;
   resolved_at?: string;
+  assigned_municipality?: string;
 }
 
 export interface Comment {
@@ -25,4 +26,20 @@ export interface Comment {
   created_at: string;
 }
 
+export interface Municipality {
+  id: string;
+  name: string;
+  area: string;
+  contact: string;
+}
+
+export interface AdminUser {
+  email: string;
+  name: string;
+  status: 'approved' | 'pending' | 'rejected';
+  approved_at?: string;
+  requested_at: string;
+}
+
 export type ViewType = 'FEED' | 'MAP' | 'CREATE' | 'DASHBOARD' | 'PROFILE';
+export type AdminViewTab = 'ISSUES' | 'APPROVE_ADMINS' | 'MUNICIPALITIES' | 'ASSIGN';

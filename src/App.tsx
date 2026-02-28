@@ -25,15 +25,46 @@ import {
   Zap,
   Trees,
   Info,
-  Car as Road
+  Car as Road,
+  LogOut,
+  Download,
+  UserCheck,
+  UserX,
+  Building2,
+  ClipboardList,
+  Plus,
+  Pencil,
+  ChevronLeft
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Issue, ViewType, Comment } from './types';
+import { Issue, ViewType, Comment, AdminUser, Municipality, AdminViewTab } from './types';
 import { cn, formatTimeAgo } from './utils';
 import { analyzeIssueImage, verifyImageAgainstDescription } from './services/aiService';
 import { databases, storage, account, DATABASE_ID, COLLECTION_ID, COMMENTS_COLLECTION_ID, BUCKET_ID, ID, Query } from './lib/appwrite';
 import MapComponent from './components/MapComponent';
 import imageCompression from 'browser-image-compression';
+
+// --- Admin Constants & Helpers ---
+const SUPER_ADMIN_EMAIL = 'areojoeshan2005@gmail.com';
+
+const getAdmins = (): AdminUser[] => {
+  try { return JSON.parse(localStorage.getItem('civicgram_admins') || '[]'); } catch { return []; }
+};
+const saveAdmins = (admins: AdminUser[]) => localStorage.setItem('civicgram_admins', JSON.stringify(admins));
+
+const getMunicipalities = (): Municipality[] => {
+  try { return JSON.parse(localStorage.getItem('civicgram_municipalities') || '[]'); } catch { return []; }
+};
+const saveMunicipalities = (m: Municipality[]) => localStorage.setItem('civicgram_municipalities', JSON.stringify(m));
+
+const isAdminUser = (email: string): 'super' | 'approved' | 'pending' | 'none' => {
+  if (email === SUPER_ADMIN_EMAIL) return 'super';
+  const admins = getAdmins();
+  const found = admins.find(a => a.email === email);
+  if (found?.status === 'approved') return 'approved';
+  if (found?.status === 'pending') return 'pending';
+  return 'none';
+};
 
 // --- Components ---
 
@@ -42,7 +73,6 @@ const Navbar = ({ activeView, setView }: { activeView: ViewType, setView: (v: Vi
     { id: 'FEED', icon: Home, label: 'Home' },
     { id: 'MAP', icon: MapIcon, label: 'Map' },
     { id: 'CREATE', icon: PlusSquare, label: 'Post' },
-    { id: 'DASHBOARD', icon: LayoutDashboard, label: 'Admin' },
     { id: 'PROFILE', icon: User, label: 'Profile' },
   ];
 
@@ -97,8 +127,19 @@ const PriorityBadge = ({ priority }: { priority: Issue['priority'] }) => {
   );
 };
 
-const LoginView = ({ onLogin }: { onLogin: () => void }) => {
-  const handleGoogleLogin = () => {
+const GoogleIcon = () => (
+  <svg className="w-5 h-5" viewBox="0 0 24 24">
+    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05" />
+    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.66l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+  </svg>
+);
+
+const LoginView = ({ onLogin, onAdminLogin }: { onLogin: () => void, onAdminLogin: () => void }) => {
+  const handleGoogleLogin = (mode: 'citizen' | 'admin') => {
+    // Store login mode so we check it after OAuth redirect
+    localStorage.setItem('civicgram_login_mode', mode);
     account.createOAuth2Session(
       'google' as any,
       window.location.protocol + '//' + window.location.host,
@@ -108,7 +149,6 @@ const LoginView = ({ onLogin }: { onLogin: () => void }) => {
 
   return (
     <div className="min-h-screen relative overflow-hidden flex items-center justify-center p-4">
-      {/* Dynamic Background */}
       <div className="fixed inset-0 bg-[#f8fafc]" />
       <div className="fixed top-[-10%] right-[-10%] w-[500px] h-[500px] bg-teal-100 rounded-full blur-[100px] opacity-40 animate-pulse" />
       <div className="fixed bottom-[-10%] left-[-10%] w-[600px] h-[600px] bg-blue-100 rounded-full blur-[120px] opacity-40" />
@@ -131,35 +171,24 @@ const LoginView = ({ onLogin }: { onLogin: () => void }) => {
             <p className="text-gray-500 font-medium tracking-wide">Better Cities, Built Together.</p>
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-3">
             <button
-              onClick={handleGoogleLogin}
+              onClick={() => handleGoogleLogin('citizen')}
               className="w-full h-14 bg-white border border-gray-100 rounded-2xl flex items-center justify-center gap-3 shadow-sm hover:shadow-md hover:border-gray-200 transition-all active:scale-[0.98]"
             >
-              <svg className="w-6 h-6" viewBox="0 0 24 24">
-                <path
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                  fill="#4285F4"
-                />
-                <path
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  fill="#34A853"
-                />
-                <path
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"
-                  fill="#FBBC05"
-                />
-                <path
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.66l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                  fill="#EA4335"
-                />
-              </svg>
-              <span className="text-gray-700 font-bold">Continue with Google</span>
+              <GoogleIcon />
+              <span className="text-gray-700 font-bold">Continue as Citizen</span>
             </button>
 
             <button
-              className="w-full text-center text-sm font-semibold text-gray-400 hover:text-gray-600 transition-colors"
+              onClick={() => handleGoogleLogin('admin')}
+              className="w-full h-14 bg-gray-900 text-white rounded-2xl flex items-center justify-center gap-3 shadow-sm hover:bg-gray-800 transition-all active:scale-[0.98]"
             >
+              <Shield size={20} />
+              <span className="font-bold">Continue as Admin</span>
+            </button>
+
+            <button className="w-full text-center text-sm font-semibold text-gray-400 hover:text-gray-600 transition-colors">
               Learn how we protect your data
             </button>
           </div>
@@ -889,6 +918,287 @@ const DashboardView = ({ issues, onStatusUpdate, onProfileClick }: { key?: React
   );
 };
 
+// --- Admin Dashboard ---
+const AdminDashboardView = ({ issues, user, onStatusUpdate, onLogout }: {
+  issues: Issue[],
+  user: any,
+  onStatusUpdate: (id: string | number, status: Issue['status']) => void,
+  onLogout: () => void,
+}) => {
+  const [activeTab, setActiveTab] = useState<AdminViewTab>('ISSUES');
+  const [filterPriority, setFilterPriority] = useState('ALL');
+  const [filterCategory, setFilterCategory] = useState('ALL');
+  const [filterStatus, setFilterStatus] = useState('ALL');
+  const [admins, setAdmins] = useState<AdminUser[]>(getAdmins());
+  const [municipalities, setMunicipalities] = useState<Municipality[]>(getMunicipalities());
+  const [newMuni, setNewMuni] = useState({ name: '', area: '', contact: '' });
+  const isSuperAdmin = user?.email === SUPER_ADMIN_EMAIL;
+
+  const filteredIssues = issues.filter(i => {
+    if (filterPriority !== 'ALL' && i.priority !== filterPriority) return false;
+    if (filterCategory !== 'ALL' && i.category !== filterCategory) return false;
+    if (filterStatus !== 'ALL' && i.status !== filterStatus) return false;
+    return true;
+  });
+
+  const exportCSV = () => {
+    const headers = ['Title', 'Category', 'Priority', 'Status', 'Trust Score', 'Location', 'User', 'Created'];
+    const rows = filteredIssues.map(i => [
+      i.title, i.category, i.priority, i.status,
+      (i.trust_score * 100).toFixed(0) + '%',
+      `${i.latitude},${i.longitude}`, i.user_id, i.created_at
+    ]);
+    const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${c}"`).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `civicgram_report_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+  };
+
+  const approveAdmin = (email: string) => {
+    const updated = admins.map(a => a.email === email ? { ...a, status: 'approved' as const, approved_at: new Date().toISOString() } : a);
+    setAdmins(updated); saveAdmins(updated);
+  };
+  const rejectAdmin = (email: string) => {
+    const updated = admins.filter(a => a.email !== email);
+    setAdmins(updated); saveAdmins(updated);
+  };
+  const addMunicipality = () => {
+    if (!newMuni.name.trim()) return;
+    const m: Municipality = { id: Date.now().toString(), ...newMuni };
+    const updated = [...municipalities, m];
+    setMunicipalities(updated); saveMunicipalities(updated);
+    setNewMuni({ name: '', area: '', contact: '' });
+  };
+  const deleteMunicipality = (id: string) => {
+    const updated = municipalities.filter(m => m.id !== id);
+    setMunicipalities(updated); saveMunicipalities(updated);
+  };
+  const assignMunicipality = async (issueId: string | number, muniName: string) => {
+    try {
+      await databases.updateDocument(DATABASE_ID, COLLECTION_ID, issueId as string, { assigned_municipality: muniName });
+    } catch { console.warn('Municipality assignment saved locally only.'); }
+  };
+
+  const tabs: { id: AdminViewTab, label: string, icon: React.ReactNode }[] = [
+    { id: 'ISSUES', label: 'Issues', icon: <ClipboardList size={18} /> },
+    { id: 'APPROVE_ADMINS', label: 'Admins', icon: <UserCheck size={18} /> },
+    { id: 'MUNICIPALITIES', label: 'Municipalities', icon: <Building2 size={18} /> },
+    { id: 'ASSIGN', label: 'Assign', icon: <MapPin size={18} /> },
+  ];
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex">
+      {/* Sidebar */}
+      <aside className="w-64 bg-gray-900 text-white min-h-screen p-6 flex flex-col fixed left-0 top-0 bottom-0 z-50">
+        <div className="flex items-center gap-3 mb-8">
+          <div className="w-10 h-10 bg-teal-500 rounded-xl flex items-center justify-center font-bold text-lg">C</div>
+          <div>
+            <h2 className="font-bold text-sm">CivicGram</h2>
+            <p className="text-[10px] text-gray-400">Admin Panel</p>
+          </div>
+        </div>
+        <nav className="flex-1 space-y-1">
+          {tabs.map(tab => (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+              className={cn("w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all",
+                activeTab === tab.id ? "bg-teal-600 text-white" : "text-gray-400 hover:text-white hover:bg-gray-800"
+              )}>
+              {tab.icon} {tab.label}
+            </button>
+          ))}
+        </nav>
+        <div className="border-t border-gray-700 pt-4 mt-4">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-8 h-8 bg-teal-600 rounded-full flex items-center justify-center text-xs font-bold">{user?.name?.charAt(0) || 'A'}</div>
+            <div className="truncate">
+              <p className="text-xs font-bold truncate">{user?.name || 'Admin'}</p>
+              <p className="text-[10px] text-gray-500 truncate">{user?.email}</p>
+            </div>
+          </div>
+          <button onClick={onLogout} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-gray-800 rounded-xl transition-all">
+            <LogOut size={16} /> Sign Out
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 ml-64 p-8">
+        {activeTab === 'ISSUES' && (
+          <div>
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">Issues</h1>
+                <p className="text-sm text-gray-500">{filteredIssues.length} of {issues.length} reports</p>
+              </div>
+              <button onClick={exportCSV} className="bg-teal-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-teal-700"><Download size={16} /> Export CSV</button>
+            </div>
+            <div className="flex gap-3 mb-6 flex-wrap">
+              <select value={filterPriority} onChange={e => setFilterPriority(e.target.value)} className="bg-white border border-gray-200 rounded-xl px-4 py-2 text-sm font-medium">
+                <option value="ALL">All Priorities</option>
+                <option value="CRITICAL">Critical</option><option value="HIGH">High</option><option value="MEDIUM">Medium</option><option value="LOW">Low</option>
+              </select>
+              <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="bg-white border border-gray-200 rounded-xl px-4 py-2 text-sm font-medium">
+                <option value="ALL">All Categories</option>
+                {['Roads', 'Garbage', 'Water', 'Safety', 'Power', 'Parks', 'Other'].map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="bg-white border border-gray-200 rounded-xl px-4 py-2 text-sm font-medium">
+                <option value="ALL">All Statuses</option>
+                <option value="REPORTED">Reported</option><option value="VERIFIED">Verified</option><option value="IN_PROGRESS">In Progress</option><option value="RESOLVED">Resolved</option>
+              </select>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+              {[
+                { label: 'Total', value: issues.length, color: 'text-blue-600' },
+                { label: 'Critical', value: issues.filter(i => i.priority === 'CRITICAL').length, color: 'text-red-600' },
+                { label: 'In Progress', value: issues.filter(i => i.status === 'IN_PROGRESS').length, color: 'text-orange-600' },
+                { label: 'Resolved', value: issues.filter(i => i.status === 'RESOLVED').length, color: 'text-green-600' },
+              ].map(s => (
+                <div key={s.label} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+                  <p className="text-xs font-bold text-gray-400 uppercase">{s.label}</p>
+                  <p className={cn("text-2xl font-black mt-1", s.color)}>{s.value}</p>
+                </div>
+              ))}
+            </div>
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead><tr className="bg-gray-50 border-b border-gray-100">
+                    <th className="px-5 py-3 text-xs font-bold text-gray-400 uppercase">Issue</th>
+                    <th className="px-5 py-3 text-xs font-bold text-gray-400 uppercase">Category</th>
+                    <th className="px-5 py-3 text-xs font-bold text-gray-400 uppercase">Priority</th>
+                    <th className="px-5 py-3 text-xs font-bold text-gray-400 uppercase">Trust</th>
+                    <th className="px-5 py-3 text-xs font-bold text-gray-400 uppercase">Status</th>
+                    <th className="px-5 py-3 text-xs font-bold text-gray-400 uppercase text-right">Actions</th>
+                  </tr></thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {filteredIssues.map(issue => (
+                      <tr key={issue.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-5 py-3"><div className="flex items-center gap-3"><img src={issue.image_url} className="w-10 h-10 rounded-lg object-cover" /><div><p className="font-bold text-sm truncate max-w-[200px]">{issue.title}</p><p className="text-[10px] text-gray-400">@{issue.user_id}</p></div></div></td>
+                        <td className="px-5 py-3"><span className="text-xs font-medium">{issue.category}</span></td>
+                        <td className="px-5 py-3"><PriorityBadge priority={issue.priority} /></td>
+                        <td className="px-5 py-3"><span className="text-xs font-bold">{(issue.trust_score * 100).toFixed(0)}%</span></td>
+                        <td className="px-5 py-3"><StatusBadge status={issue.status} /></td>
+                        <td className="px-5 py-3 text-right">
+                          <select value={issue.status} onChange={e => onStatusUpdate(issue.id, e.target.value as Issue['status'])} className="text-xs font-bold bg-gray-100 rounded-lg px-2 py-1">
+                            <option value="REPORTED">Reported</option><option value="VERIFIED">Verified</option><option value="IN_PROGRESS">In Progress</option><option value="RESOLVED">Resolved</option>
+                          </select>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {filteredIssues.length === 0 && <p className="text-center py-10 text-gray-400 text-sm">No issues match filters.</p>}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'APPROVE_ADMINS' && (
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Admin Management</h1>
+            <p className="text-sm text-gray-500 mb-6">{isSuperAdmin ? 'Approve or reject admin registrations.' : 'Only the super admin can manage this.'}</p>
+            {isSuperAdmin && (
+              <>
+                <h2 className="text-lg font-bold text-gray-800 mb-3">Pending Requests</h2>
+                {admins.filter(a => a.status === 'pending').length === 0 ? <p className="text-gray-400 text-sm mb-6">No pending requests.</p> : (
+                  <div className="space-y-3 mb-8">
+                    {admins.filter(a => a.status === 'pending').map(admin => (
+                      <div key={admin.email} className="bg-white border border-gray-100 rounded-2xl p-4 flex items-center justify-between shadow-sm">
+                        <div><p className="font-bold text-sm">{admin.name}</p><p className="text-xs text-gray-500">{admin.email}</p></div>
+                        <div className="flex gap-2">
+                          <button onClick={() => approveAdmin(admin.email)} className="bg-green-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1 hover:bg-green-600"><UserCheck size={14} /> Approve</button>
+                          <button onClick={() => rejectAdmin(admin.email)} className="bg-red-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1 hover:bg-red-600"><UserX size={14} /> Reject</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <h2 className="text-lg font-bold text-gray-800 mb-3">Approved Admins</h2>
+                <div className="space-y-2">
+                  <div className="bg-teal-50 border border-teal-100 rounded-2xl p-4">
+                    <p className="font-bold text-sm text-teal-800">Joe Shan Neeraj <span className="text-[10px] bg-teal-600 text-white px-2 py-0.5 rounded-full ml-2">Super Admin</span></p>
+                    <p className="text-xs text-teal-600">{SUPER_ADMIN_EMAIL}</p>
+                  </div>
+                  {admins.filter(a => a.status === 'approved').map(admin => (
+                    <div key={admin.email} className="bg-white border border-gray-100 rounded-2xl p-4 flex items-center justify-between shadow-sm">
+                      <div><p className="font-bold text-sm">{admin.name}</p><p className="text-xs text-gray-500">{admin.email}</p></div>
+                      <button onClick={() => rejectAdmin(admin.email)} className="text-xs text-red-400 hover:text-red-600 font-medium">Remove</button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'MUNICIPALITIES' && (
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Municipalities</h1>
+            <p className="text-sm text-gray-500 mb-6">Manage municipalities that handle civic issues.</p>
+            <div className="bg-white border border-gray-100 rounded-2xl p-5 mb-6 shadow-sm">
+              <h3 className="text-sm font-bold text-gray-700 mb-3">Add Municipality</h3>
+              <div className="flex gap-3 flex-wrap">
+                <input value={newMuni.name} onChange={e => setNewMuni({ ...newMuni, name: e.target.value })} placeholder="Name" className="flex-1 min-w-[150px] bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm" />
+                <input value={newMuni.area} onChange={e => setNewMuni({ ...newMuni, area: e.target.value })} placeholder="Area / Zone" className="flex-1 min-w-[150px] bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm" />
+                <input value={newMuni.contact} onChange={e => setNewMuni({ ...newMuni, contact: e.target.value })} placeholder="Contact" className="flex-1 min-w-[150px] bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm" />
+                <button onClick={addMunicipality} className="bg-teal-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-teal-700"><Plus size={16} /> Add</button>
+              </div>
+            </div>
+            <div className="space-y-3">
+              {municipalities.length === 0 && <p className="text-gray-400 text-sm text-center py-8">No municipalities added yet.</p>}
+              {municipalities.map(m => (
+                <div key={m.id} className="bg-white border border-gray-100 rounded-2xl p-4 flex items-center justify-between shadow-sm">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center text-blue-600"><Building2 size={20} /></div>
+                    <div><p className="font-bold text-sm">{m.name}</p><p className="text-xs text-gray-500">{m.area} • {m.contact}</p></div>
+                  </div>
+                  <button onClick={() => deleteMunicipality(m.id)} className="text-xs text-red-400 hover:text-red-600 font-medium">Delete</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'ASSIGN' && (
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Assign Municipality</h1>
+            <p className="text-sm text-gray-500 mb-6">Assign a municipality to handle each reported issue.</p>
+            {municipalities.length === 0 ? (
+              <div className="bg-yellow-50 border border-yellow-200 text-yellow-700 px-6 py-4 rounded-2xl text-sm">
+                No municipalities added yet. Go to the <strong>Municipalities</strong> tab first.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {issues.map(issue => (
+                  <div key={issue.id} className="bg-white border border-gray-100 rounded-2xl p-4 flex items-center justify-between shadow-sm">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <img src={issue.image_url} className="w-12 h-12 rounded-xl object-cover flex-shrink-0" />
+                      <div className="min-w-0">
+                        <p className="font-bold text-sm truncate">{issue.title}</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-[10px] text-gray-400">{issue.category}</span>
+                          <PriorityBadge priority={issue.priority} />
+                        </div>
+                      </div>
+                    </div>
+                    <select defaultValue={issue.assigned_municipality || ''} onChange={e => assignMunicipality(issue.id, e.target.value)}
+                      className="ml-4 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-sm font-medium min-w-[180px]">
+                      <option value="">Unassigned</option>
+                      {municipalities.map(m => <option key={m.id} value={m.name}>{m.name} ({m.area})</option>)}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </main>
+    </div>
+  );
+};
+
 const ProfileView = ({ issues, onUpvote, user, onLogout, onDeleteIssue, onProfileClick, onCommentClick, isPublic = false, targetUser = null }: { key?: React.Key, issues: Issue[], onUpvote: (id: string | number) => void, user: any, onLogout?: () => void, onDeleteIssue?: (id: string | number) => void, onProfileClick: (username: string) => void, onCommentClick?: (id: string | number) => void, isPublic?: boolean, targetUser?: any }) => {
   const [activeTab, setActiveTab] = useState<'REPORTS' | 'LIKED' | 'FOLLOWING'>('REPORTS');
   const displayUser = isPublic ? targetUser : user;
@@ -1156,6 +1466,8 @@ export default function App() {
   const [issues, setIssues] = useState<Issue[]>([]);
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
+  const [isAdminMode, setIsAdminMode] = useState(false);
+  const [adminPending, setAdminPending] = useState(false);
   const [userLocation, setUserLocation] = useState<{ lat: number, lng: number } | null>(null);
   const [selectedProfileUser, setSelectedProfileUser] = useState<string | null>(null);
   const [activeCommentsIssueId, setActiveCommentsIssueId] = useState<string | number | null>(null);
@@ -1177,6 +1489,24 @@ export default function App() {
     try {
       const session = await account.get();
       setUser(session);
+
+      // Check if user logged in via the admin button
+      const loginMode = localStorage.getItem('civicgram_login_mode');
+      if (loginMode === 'admin') {
+        localStorage.removeItem('civicgram_login_mode');
+        const adminStatus = isAdminUser(session.email);
+        if (adminStatus === 'super' || adminStatus === 'approved') {
+          setIsAdminMode(true);
+        } else if (adminStatus === 'pending') {
+          setAdminPending(true);
+        } else {
+          // New admin request — add to pending list
+          const admins = getAdmins();
+          admins.push({ email: session.email, name: session.name, status: 'pending', requested_at: new Date().toISOString() });
+          saveAdmins(admins);
+          setAdminPending(true);
+        }
+      }
     } catch (error) {
       setUser(null);
     } finally {
@@ -1248,6 +1578,9 @@ export default function App() {
     try {
       await account.deleteSession('current');
       setUser(null);
+      setIsAdminMode(false);
+      setAdminPending(false);
+      setView('FEED');
     } catch (error) {
       console.error("Logout failed:", error);
     }
@@ -1389,7 +1722,28 @@ export default function App() {
   };
 
   if (!user && !loading) {
-    return <LoginView onLogin={checkUserSession} />;
+    return <LoginView onLogin={checkUserSession} onAdminLogin={checkUserSession} />;
+  }
+
+  // Admin pending approval screen
+  if (adminPending && !loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl p-8 max-w-md text-center shadow-xl">
+          <div className="w-16 h-16 bg-yellow-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <Clock size={32} className="text-yellow-600" />
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Awaiting Approval</h2>
+          <p className="text-gray-500 text-sm mb-6">Your admin registration is pending approval from the super admin. You'll get access once approved.</p>
+          <button onClick={handleLogout} className="bg-gray-900 text-white px-6 py-3 rounded-2xl font-bold text-sm hover:bg-gray-800 transition-all">Back to Login</button>
+        </div>
+      </div>
+    );
+  }
+
+  // Admin mode — show admin dashboard
+  if (isAdminMode && user) {
+    return <AdminDashboardView issues={issues} user={user} onStatusUpdate={handleStatusUpdate} onLogout={handleLogout} />;
   }
 
   return (
@@ -1418,7 +1772,6 @@ export default function App() {
                 {view === 'FEED' && <FeedView key="feed" issues={issues} onUpvote={handleUpvote} user={user} onProfileClick={handleProfileClick} onCommentClick={setActiveCommentsIssueId} />}
                 {view === 'MAP' && <HeatMapView key="map" issues={issues} onProfileClick={handleProfileClick} userLocation={userLocation} />}
                 {view === 'CREATE' && <CreateView key="create" onIssueCreated={handleIssueCreated} user={user} initialLocation={userLocation} />}
-                {view === 'DASHBOARD' && <DashboardView key="dashboard" issues={issues} onStatusUpdate={handleStatusUpdate} onProfileClick={handleProfileClick} />}
                 {view === 'PROFILE' && <ProfileView key="profile" issues={issues} onUpvote={handleUpvote} user={user} onLogout={handleLogout} onDeleteIssue={handleDeleteIssue} onProfileClick={handleProfileClick} onCommentClick={setActiveCommentsIssueId} />}
               </>
             )}
