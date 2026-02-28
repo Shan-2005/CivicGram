@@ -1318,13 +1318,20 @@ export default function App() {
           };
 
           console.log(`Original file size: ${(imageFile.size / 1024 / 1024).toFixed(2)} MB`);
-          const compressedFile = await imageCompression(imageFile, options);
-          console.log(`Compressed file size: ${(compressedFile.size / 1024 / 1024).toFixed(2)} MB`);
+          const compressedBlob = await imageCompression(imageFile, options);
+          console.log(`Compressed file size: ${(compressedBlob.size / 1024 / 1024).toFixed(2)} MB`);
+
+          // Appwrite requires a File object, not a Blob
+          const compressedFile = new File(
+            [compressedBlob],
+            imageFile.name || 'photo.jpg',
+            { type: compressedBlob.type || 'image/jpeg' }
+          );
 
           const uploadedFile = await storage.createFile(
             BUCKET_ID,
             ID.unique(),
-            compressedFile // Now uploading the compressed version!
+            compressedFile
           );
           // Generate the cloud URL for the document
           // @ts-ignore
