@@ -337,7 +337,7 @@ const FeedView = ({ issues, onUpvote, user, onProfileClick, onCommentClick }: { 
       <div className="space-y-0 md:space-y-6">
         {filteredIssues.length > 0 ? (
           filteredIssues.map(issue => (
-            <IssueCard key={issue.id} issue={issue} onUpvote={onUpvote} onProfileClick={onProfileClick} />
+            <IssueCard key={issue.id} issue={issue} onUpvote={onUpvote} onProfileClick={onProfileClick} onCommentClick={onCommentClick} />
           ))
         ) : (
           <div className="text-center py-20 text-gray-400">No reports found for this category.</div>
