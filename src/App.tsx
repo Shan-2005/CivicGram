@@ -17,13 +17,15 @@ import {
   Camera,
   X,
   ChevronRight,
-  Filter
+  Filter,
+  Navigation
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Issue, ViewType } from './types';
 import { cn, formatTimeAgo } from './utils';
-import { analyzeIssueImage } from './services/aiService';
+import { analyzeIssueImage, verifyImageAgainstDescription } from './services/aiService';
 import { databases, storage, account, DATABASE_ID, COLLECTION_ID, BUCKET_ID, ID, Query } from './lib/appwrite';
+import MapComponent from './components/MapComponent';
 
 // --- Components ---
 
@@ -163,7 +165,7 @@ const LoginView = ({ onLogin }: { onLogin: () => void }) => {
   );
 };
 
-const IssueCard = ({ issue, onUpvote }: { issue: Issue, onUpvote: (id: string | number) => void }) => {
+const IssueCard = ({ issue, onUpvote, onDelete, onProfileClick }: { issue: Issue, onUpvote: (id: string | number) => void, onDelete?: (id: string | number) => void, onProfileClick?: (username: string) => void }) => {
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -173,12 +175,20 @@ const IssueCard = ({ issue, onUpvote }: { issue: Issue, onUpvote: (id: string | 
       {/* Header */}
       <div className="p-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-teal-100 to-teal-200 flex items-center justify-center text-teal-700 font-bold text-xs">
+          <button
+            onClick={() => onProfileClick?.(issue.user_id)}
+            className="w-8 h-8 rounded-full bg-gradient-to-tr from-teal-100 to-teal-200 flex items-center justify-center text-teal-700 font-bold text-xs hover:ring-2 hover:ring-teal-500 transition-all"
+          >
             {issue.user_id.substring(0, 2).toUpperCase()}
-          </div>
-          <div>
+          </button>
+          <div className="flex flex-col">
             <div className="flex items-center gap-2">
-              <span className="font-semibold text-sm">@{issue.user_id}</span>
+              <button
+                onClick={() => onProfileClick?.(issue.user_id)}
+                className="font-semibold text-sm hover:text-teal-600 transition-colors"
+              >
+                @{issue.user_id}
+              </button>
               <StatusBadge status={issue.status} />
             </div>
             <div className="flex items-center text-gray-400 text-[10px] gap-1">
@@ -187,7 +197,13 @@ const IssueCard = ({ issue, onUpvote }: { issue: Issue, onUpvote: (id: string | 
             </div>
           </div>
         </div>
-        <button className="text-gray-400"><X size={20} /></button>
+        <div className="flex items-center gap-2">
+          {onDelete && (
+            <button onClick={() => onDelete(issue.id)} className="text-gray-400 hover:text-red-500 transition-colors">
+              <X size={20} />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Image */}
@@ -249,49 +265,92 @@ const IssueCard = ({ issue, onUpvote }: { issue: Issue, onUpvote: (id: string | 
   );
 };
 
-const FeedView = ({ issues, onUpvote }: { issues: Issue[], onUpvote: (id: string | number) => void }) => {
+const FeedView = ({ issues, onUpvote, user, onProfileClick }: { issues: Issue[], onUpvote: (id: string | number) => void, user: any, onProfileClick: (username: string) => void }) => {
+  const [activeCategory, setActiveCategory] = useState<string>('All');
+
+  const filteredIssues = activeCategory === 'All'
+    ? issues
+    : issues.filter(i => i.category.toLowerCase() === activeCategory.toLowerCase());
+
   return (
     <div className="pb-20 pt-4 md:pt-24 md:pl-24">
-      <div className="max-w-xl mx-auto px-4 mb-6 flex items-center justify-between md:hidden">
-        <h1 className="text-2xl font-bold bg-gradient-to-r from-teal-600 to-teal-400 bg-clip-text text-transparent">CivicGram</h1>
-        <div className="flex gap-4">
-          <Bell size={24} className="text-gray-700" />
-          <PlusSquare size={24} className="text-gray-700" />
+      {/* Search Header for Desktop */}
+      <div className="hidden md:flex max-w-xl mx-auto mb-8 px-4 items-center gap-4">
+        <div className="flex-1 relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+          <input
+            type="text"
+            placeholder="Search reports or areas..."
+            className="w-full bg-gray-50 border-none rounded-2xl py-4 pl-12 pr-4 focus:ring-2 focus:ring-teal-500 shadow-sm"
+          />
         </div>
       </div>
 
       {/* Stories-like Categories */}
       <div className="flex gap-4 overflow-x-auto px-4 mb-6 no-scrollbar">
-        {['Roads', 'Garbage', 'Water', 'Safety', 'Power', 'Parks'].map((cat) => (
-          <div key={cat} className="flex flex-col items-center gap-1 flex-shrink-0">
-            <div className="w-16 h-16 rounded-full p-[2px] bg-gradient-to-tr from-yellow-400 via-red-500 to-purple-600">
+        {['All', 'Roads', 'Garbage', 'Water', 'Safety', 'Power', 'Parks'].map((cat) => (
+          <button
+            key={cat}
+            onClick={() => setActiveCategory(cat)}
+            className="flex flex-col items-center gap-1 flex-shrink-0 group"
+          >
+            <div className={cn(
+              "w-16 h-16 rounded-full p-[2px] transition-all",
+              activeCategory === cat ? "bg-gradient-to-tr from-yellow-400 via-red-500 to-purple-600 scale-110" : "bg-gray-200"
+            )}>
               <div className="w-full h-full rounded-full bg-white p-[2px]">
-                <div className="w-full h-full rounded-full bg-gray-100 flex items-center justify-center text-gray-400">
+                <div className="w-full h-full rounded-full bg-gray-100 flex items-center justify-center text-gray-400 group-hover:text-teal-600 transition-colors">
                   <MapPin size={24} />
                 </div>
               </div>
             </div>
-            <span className="text-[10px] font-medium">{cat}</span>
-          </div>
+            <span className={cn("text-[10px] font-medium", activeCategory === cat ? "text-teal-600 font-bold" : "text-gray-500")}>{cat}</span>
+          </button>
         ))}
       </div>
 
       <div className="space-y-0 md:space-y-6">
-        {issues.map(issue => (
-          <IssueCard key={issue.id} issue={issue} onUpvote={onUpvote} />
-        ))}
+        {filteredIssues.length > 0 ? (
+          filteredIssues.map(issue => (
+            <IssueCard key={issue.id} issue={issue} onUpvote={onUpvote} onProfileClick={onProfileClick} />
+          ))
+        ) : (
+          <div className="text-center py-20 text-gray-400">No reports found for this category.</div>
+        )}
       </div>
     </div>
   );
 };
 
-const CreateView = ({ onIssueCreated }: { onIssueCreated: (issue: any, file?: File | null) => void }) => {
+const CreateView = ({ onIssueCreated, user, initialLocation }: { onIssueCreated: (issue: any, file?: File | null) => void, user: any, initialLocation: { lat: number, lng: number } | null }) => {
   const [step, setStep] = useState(1);
   const [image, setImage] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [analysis, setAnalysis] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [caption, setCaption] = useState('');
+  const [location, setLocation] = useState('');
+  const [coordinates, setCoordinates] = useState<{ lat: number, lng: number } | null>(initialLocation);
+  const [verificationError, setVerificationError] = useState<string | null>(null);
+
+  const handleLocateMe = () => {
+    if (navigator.geolocation) {
+      setLoading(true);
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setCoordinates({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          });
+          setLoading(false);
+        },
+        () => {
+          alert("Could not get your location. Please check your browser permissions.");
+          setLoading(false);
+        }
+      );
+    }
+  };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -300,7 +359,7 @@ const CreateView = ({ onIssueCreated }: { onIssueCreated: (issue: any, file?: Fi
       const reader = new FileReader();
       reader.onloadend = () => {
         setImage(reader.result as string);
-        setStep(2);
+        setStep(3);
       };
       reader.readAsDataURL(selectedFile);
     }
@@ -309,11 +368,17 @@ const CreateView = ({ onIssueCreated }: { onIssueCreated: (issue: any, file?: Fi
   const runAIAnalysis = async () => {
     if (!image) return;
     setLoading(true);
+    setVerificationError(null);
     try {
-      const result = await analyzeIssueImage(image);
+      const result = await verifyImageAgainstDescription(image, caption, location);
+      if (!result.isValid) {
+        setVerificationError("images dose not match the given description: " + result.reason);
+        setLoading(false);
+        return;
+      }
       setAnalysis(result);
-      setCaption(result.description);
-      setStep(3);
+      // Use AI generated caption if it's better, or keep user's
+      setStep(4);
     } catch (error) {
       console.error(error);
       alert("AI analysis failed. Please try again.");
@@ -326,20 +391,17 @@ const CreateView = ({ onIssueCreated }: { onIssueCreated: (issue: any, file?: Fi
     if (!analysis || !image) return;
     setLoading(true);
     try {
-      // Simulate network request
-      await new Promise(resolve => setTimeout(resolve, 800));
-
       const newIssue = {
         title: analysis.title,
         description: caption,
         category: analysis.category,
         image_url: image,
-        latitude: 37.7749 + (Math.random() - 0.5) * 0.1,
-        longitude: -122.4194 + (Math.random() - 0.5) * 0.1,
+        latitude: coordinates?.lat || 37.7749 + (Math.random() - 0.5) * 0.1,
+        longitude: coordinates?.lng || -122.4194 + (Math.random() - 0.5) * 0.1,
         priority: analysis.priority.toUpperCase() as "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
         trust_score: analysis.trust_score,
-        is_verified: !analysis.is_fake,
-        user_id: 'citizen_joe',
+        is_verified: analysis.isValid,
+        user_id: user?.name || 'citizen_joe',
         status: 'REPORTED' as const,
         upvotes: 0,
         comment_count: 0,
@@ -359,7 +421,7 @@ const CreateView = ({ onIssueCreated }: { onIssueCreated: (issue: any, file?: Fi
       <div className="max-w-xl mx-auto px-4">
         <div className="flex items-center justify-between mb-8">
           <h2 className="text-xl font-bold">New Issue Report</h2>
-          <span className="text-sm text-gray-400">Step {step} of 3</span>
+          <span className="text-sm text-gray-400">Step {step} of 4</span>
         </div>
 
         <AnimatePresence mode="wait">
@@ -369,14 +431,74 @@ const CreateView = ({ onIssueCreated }: { onIssueCreated: (issue: any, file?: Fi
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
+              className="space-y-6"
+            >
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Description</label>
+                  <textarea
+                    value={caption}
+                    onChange={(e) => setCaption(e.target.value)}
+                    className="w-full bg-gray-50 border-none rounded-2xl p-4 text-sm focus:ring-2 focus:ring-teal-500 h-32 resize-none"
+                    placeholder="Describe the issue you're seeing..."
+                  />
+                </div>
+                <div>
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Location Hint</label>
+                    <button
+                      onClick={handleLocateMe}
+                      className="text-xs font-bold text-teal-600 flex items-center gap-1 hover:text-teal-700"
+                    >
+                      <Navigation size={12} />
+                      Use My Location
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                    className="w-full bg-gray-50 border-none rounded-2xl p-4 text-sm focus:ring-2 focus:ring-teal-500 mb-4"
+                    placeholder="e.g. 5th Ave and Market St"
+                  />
+                  <div className="h-64 mb-4">
+                    <MapComponent
+                      issues={[]}
+                      onMapClick={(latlng) => setCoordinates(latlng)}
+                      center={coordinates || { lat: 37.7749, lng: -122.4194 }}
+                      selectedLocation={coordinates}
+                      userLocation={initialLocation}
+                      zoom={15}
+                    />
+                  </div>
+                  <p className="text-[10px] text-gray-400 font-medium">Tip: Click the map to pin the exact location.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setStep(2)}
+                disabled={!caption || !location || !coordinates}
+                className="w-full bg-teal-600 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                Next: Take Photo
+                <ChevronRight size={20} />
+              </button>
+            </motion.div>
+          )}
+
+          {step === 2 && (
+            <motion.div
+              key="step2"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
               className="flex flex-col items-center justify-center py-20 border-2 border-dashed border-gray-200 rounded-3xl gap-4"
             >
               <div className="w-20 h-20 bg-teal-50 rounded-full flex items-center justify-center text-teal-600">
                 <Camera size={40} />
               </div>
-              <div className="text-center">
+              <div className="text-center px-4">
                 <p className="font-bold text-lg">Capture the Issue</p>
-                <p className="text-gray-400 text-sm">Take a clear photo of the problem</p>
+                <p className="text-gray-400 text-sm">Now, take a clear photo of the problem you just described.</p>
               </div>
               <label className="bg-teal-600 text-white px-8 py-3 rounded-xl font-bold cursor-pointer hover:bg-teal-700 transition-colors">
                 Open Camera
@@ -389,9 +511,9 @@ const CreateView = ({ onIssueCreated }: { onIssueCreated: (issue: any, file?: Fi
             </motion.div>
           )}
 
-          {step === 2 && image && (
+          {step === 3 && image && (
             <motion.div
-              key="step2"
+              key="step3"
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
@@ -400,27 +522,44 @@ const CreateView = ({ onIssueCreated }: { onIssueCreated: (issue: any, file?: Fi
               <div className="aspect-square rounded-3xl overflow-hidden bg-gray-100 shadow-inner">
                 <img src={image} alt="Preview" className="w-full h-full object-cover" />
               </div>
+              {verificationError && (
+                <div className="bg-red-50 p-4 rounded-2xl flex items-start gap-3 border border-red-100">
+                  <AlertCircle className="text-red-600 mt-1" size={20} />
+                  <div>
+                    <p className="font-bold text-red-900 text-sm">Verification Failed</p>
+                    <p className="text-red-700 text-xs">{verificationError}</p>
+                  </div>
+                </div>
+              )}
               <div className="bg-teal-50 p-4 rounded-2xl flex items-start gap-3">
                 <AlertCircle className="text-teal-600 mt-1" size={20} />
                 <div>
-                  <p className="font-bold text-teal-900 text-sm">AI Verification</p>
-                  <p className="text-teal-700 text-xs">Our AI will now verify the image and categorize the issue for faster resolution.</p>
+                  <p className="font-bold text-teal-900 text-sm">AI-Powered Check</p>
+                  <p className="text-teal-700 text-xs">Our AI will now verify that the photo matches your description: "{caption}" at "{location}".</p>
                 </div>
               </div>
-              <button
-                onClick={runAIAnalysis}
-                disabled={loading}
-                className="w-full bg-teal-600 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 disabled:opacity-50"
-              >
-                {loading ? "Analyzing..." : "Verify with AI"}
-                {!loading && <ChevronRight size={20} />}
-              </button>
+              <div className="flex gap-4">
+                <button
+                  onClick={() => setStep(2)}
+                  className="w-1/3 bg-gray-100 text-gray-700 py-4 rounded-2xl font-bold"
+                >
+                  Retake
+                </button>
+                <button
+                  onClick={runAIAnalysis}
+                  disabled={loading}
+                  className="flex-1 bg-teal-600 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {loading ? "Verifying..." : "Verify Photo"}
+                  {!loading && <ChevronRight size={20} />}
+                </button>
+              </div>
             </motion.div>
           )}
 
-          {step === 3 && analysis && (
+          {step === 4 && analysis && (
             <motion.div
-              key="step3"
+              key="step4"
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               className="space-y-6"
@@ -433,23 +572,16 @@ const CreateView = ({ onIssueCreated }: { onIssueCreated: (issue: any, file?: Fi
                   <p className="font-bold text-sm">{analysis.title}</p>
                   <div className="flex gap-2 mt-1">
                     <span className="bg-white px-2 py-0.5 rounded text-[10px] font-bold border border-gray-200">{analysis.category}</span>
-                    <span className={cn("px-2 py-0.5 rounded text-[10px] font-bold border",
-                      analysis.is_fake ? "border-red-200 text-red-600" : "border-green-200 text-green-600"
-                    )}>
-                      {analysis.is_fake ? "Manipulation Detected" : "Verified Image"}
+                    <span className="bg-green-50 px-2 py-0.5 rounded text-[10px] font-bold border border-green-200 text-green-600">
+                      Verified Match
                     </span>
                   </div>
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Caption</label>
-                <textarea
-                  value={caption}
-                  onChange={(e) => setCaption(e.target.value)}
-                  className="w-full bg-gray-50 border-none rounded-2xl p-4 text-sm focus:ring-2 focus:ring-teal-500 h-32 resize-none"
-                  placeholder="Tell us more about this issue..."
-                />
+              <div className="bg-blue-50 p-4 rounded-2xl">
+                <p className="text-[10px] font-bold text-blue-400 uppercase tracking-wider mb-2">Final Review</p>
+                <p className="text-sm text-blue-900 font-medium italic">"{analysis.description}"</p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -458,7 +590,7 @@ const CreateView = ({ onIssueCreated }: { onIssueCreated: (issue: any, file?: Fi
                   <p className="font-bold text-teal-600">{analysis.priority}</p>
                 </div>
                 <div className="bg-gray-50 p-4 rounded-2xl">
-                  <p className="text-[10px] font-bold text-gray-400 uppercase">Trust Score</p>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase">AI Trust</p>
                   <p className="font-bold text-teal-600">{(analysis.trust_score * 100).toFixed(0)}%</p>
                 </div>
               </div>
@@ -468,7 +600,7 @@ const CreateView = ({ onIssueCreated }: { onIssueCreated: (issue: any, file?: Fi
                 disabled={loading}
                 className="w-full bg-teal-600 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-teal-200"
               >
-                {loading ? "Posting..." : "Post to CivicGram"}
+                {loading ? "Posting..." : "Confirm & Post"}
               </button>
             </motion.div>
           )}
@@ -478,94 +610,76 @@ const CreateView = ({ onIssueCreated }: { onIssueCreated: (issue: any, file?: Fi
   );
 };
 
-const HeatMapView = ({ issues, onUpvote }: { issues: Issue[], onUpvote: (id: string | number) => void }) => {
-  // Since we can't easily use react-leaflet without a lot of setup in this environment,
-  // we'll build a custom Snapchat-style Heatmap using SVG and Framer Motion
-  // This will look like a stylized map of a city.
+const HeatMapView = ({ issues, onProfileClick, userLocation }: { issues: Issue[], onProfileClick: (username: string) => void, userLocation: { lat: number, lng: number } | null }) => {
+  const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null);
 
   return (
-    <div className="h-screen w-full bg-teal-950 relative overflow-hidden md:pl-24">
-      {/* Stylized Map Background */}
-      <div className="absolute inset-0 opacity-20">
-        <svg width="100%" height="100%" viewBox="0 0 800 1200" preserveAspectRatio="xMidYMid slice">
-          <path d="M0,100 L800,100 M0,300 L800,300 M0,500 L800,500 M0,700 L800,700 M0,900 L800,900" stroke="white" strokeWidth="2" />
-          <path d="M100,0 L100,1200 M300,0 L300,1200 M500,0 L500,1200 M700,0 L700,1200" stroke="white" strokeWidth="2" />
-          <circle cx="400" cy="600" r="300" fill="none" stroke="white" strokeWidth="1" strokeDasharray="10,10" />
-        </svg>
-      </div>
+    <div className="h-screen w-full bg-gray-50 relative overflow-hidden md:pl-24">
+      <MapComponent
+        issues={issues}
+        onMarkerClick={(issue) => setSelectedIssue(issue)}
+        center={userLocation || { lat: 37.7749, lng: -122.4194 }}
+        userLocation={userLocation}
+        zoom={13}
+      />
 
-      {/* Heat Zones */}
-      {issues.map((issue, i) => {
-        // Map lat/lng to percentage for the stylized map
-        // SF bounds roughly: 37.70 to 37.82 lat, -122.52 to -122.35 lng
-        const latMin = 37.70, latMax = 37.82;
-        const lngMin = -122.52, lngMax = -122.35;
-
-        const x = ((issue.longitude - lngMin) / (lngMax - lngMin)) * 100;
-        const y = (1 - (issue.latitude - latMin) / (latMax - latMin)) * 100;
-
-        return (
+      {/* Issue Detail Overlay */}
+      <AnimatePresence>
+        {selectedIssue && (
           <motion.div
-            key={issue.id}
-            initial={{ scale: 0, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ delay: i * 0.1 }}
-            className="absolute cursor-pointer group"
-            style={{ left: `${x}%`, top: `${y}%` }}
+            initial={{ y: 100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 100, opacity: 0 }}
+            className="absolute bottom-24 left-6 right-6 md:left-30 bg-white/90 backdrop-blur-xl border border-gray-100 p-4 rounded-3xl z-20 shadow-2xl"
           >
-            <div className={cn(
-              "w-16 h-16 -ml-8 -mt-8 rounded-full blur-2xl animate-pulse opacity-60",
-              issue.priority === 'CRITICAL' ? "bg-red-500" :
-                issue.priority === 'HIGH' ? "bg-orange-500" : "bg-teal-400"
-            )} />
-            <div className="relative -mt-10 -ml-4 flex flex-col items-center group-hover:scale-110 transition-transform">
-              <div className="w-10 h-10 rounded-full border-2 border-white overflow-hidden shadow-xl">
-                <img src={issue.image_url} className="w-full h-full object-cover" />
+            <div className="flex justify-between items-start mb-3">
+              <div className="flex items-center gap-3">
+                <img src={selectedIssue.image_url} className="w-12 h-12 rounded-xl object-cover" />
+                <div>
+                  <h3 className="font-bold text-sm">{selectedIssue.title}</h3>
+                  <button
+                    onClick={() => onProfileClick(selectedIssue.user_id)}
+                    className="text-[10px] text-teal-600 font-bold"
+                  >
+                    @{selectedIssue.user_id}
+                  </button>
+                </div>
               </div>
-              <div className="bg-white px-2 py-0.5 rounded-full text-[8px] font-bold mt-1 shadow-sm border border-gray-100">
-                {issue.category}
-              </div>
+              <button
+                onClick={() => setSelectedIssue(null)}
+                className="p-1 bg-gray-100 rounded-full text-gray-400"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="flex gap-2">
+              <StatusBadge status={selectedIssue.status} />
+              <PriorityBadge priority={selectedIssue.priority} />
             </div>
           </motion.div>
-        );
-      })}
+        )}
+      </AnimatePresence>
 
       {/* UI Overlays */}
-      <div className="absolute top-6 left-6 right-6 md:left-30 flex justify-between items-center z-10">
-        <div className="bg-white/10 backdrop-blur-md border border-white/20 p-1 rounded-full flex gap-1">
+      <div className="absolute top-6 left-6 right-6 md:left-30 flex justify-between items-center z-10 pointer-events-none">
+        <div className="bg-white/80 backdrop-blur-md border border-gray-100 p-1 rounded-full flex gap-1 pointer-events-auto shadow-lg">
           {['All', 'Roads', 'Garbage', 'Safety'].map(f => (
             <button key={f} className={cn("px-4 py-1.5 rounded-full text-xs font-bold transition-colors",
-              f === 'All' ? "bg-white text-teal-950" : "text-white hover:bg-white/10"
+              f === 'All' ? "bg-teal-600 text-white" : "text-gray-500 hover:bg-gray-100"
             )}>
               {f}
             </button>
           ))}
         </div>
-        <button className="w-10 h-10 bg-white/10 backdrop-blur-md border border-white/20 rounded-full flex items-center justify-center text-white">
+        <button className="w-10 h-10 bg-white/80 backdrop-blur-md border border-gray-100 rounded-full flex items-center justify-center text-gray-700 pointer-events-auto shadow-lg">
           <Filter size={20} />
         </button>
-      </div>
-
-      <div className="absolute bottom-24 left-6 right-6 md:left-30 bg-white/10 backdrop-blur-xl border border-white/20 p-4 rounded-3xl z-10">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-white font-bold">Nearby Issues</h3>
-          <span className="text-teal-400 text-xs font-bold">Live Updates</span>
-        </div>
-        <div className="flex gap-4 overflow-x-auto no-scrollbar">
-          {issues.slice(0, 5).map(issue => (
-            <div key={issue.id} className="flex-shrink-0 w-32 bg-white/10 rounded-2xl p-2 border border-white/10">
-              <img src={issue.image_url} className="w-full aspect-square object-cover rounded-xl mb-2" />
-              <p className="text-white text-[10px] font-bold truncate">{issue.title}</p>
-              <p className="text-teal-400 text-[8px] uppercase font-bold">{issue.priority}</p>
-            </div>
-          ))}
-        </div>
       </div>
     </div>
   );
 };
 
-const DashboardView = ({ issues, onStatusUpdate }: { issues: Issue[], onStatusUpdate: (id: string | number, status: Issue['status']) => void }) => {
+const DashboardView = ({ issues, onStatusUpdate, onProfileClick }: { issues: Issue[], onStatusUpdate: (id: string | number, status: Issue['status']) => void, onProfileClick: (username: string) => void }) => {
   return (
     <div className="min-h-screen bg-gray-50 pb-20 pt-4 md:pt-24 md:pl-24">
       <div className="max-w-6xl mx-auto px-4">
@@ -623,7 +737,12 @@ const DashboardView = ({ issues, onStatusUpdate }: { issues: Issue[], onStatusUp
                           <img src={issue.image_url} className="w-10 h-10 rounded-lg object-cover" />
                           <div>
                             <p className="font-bold text-sm truncate max-w-[200px]">{issue.title}</p>
-                            <p className="text-[10px] text-gray-400">@{issue.user_id} • {formatTimeAgo(issue.created_at)}</p>
+                            <button
+                              onClick={() => onProfileClick(issue.user_id)}
+                              className="text-[10px] text-gray-400 hover:text-teal-600 transition-colors"
+                            >
+                              @{issue.user_id} • {formatTimeAgo(issue.created_at)}
+                            </button>
                           </div>
                         </div>
                       </td>
@@ -668,30 +787,54 @@ const DashboardView = ({ issues, onStatusUpdate }: { issues: Issue[], onStatusUp
   );
 };
 
-const ProfileView = ({ issues, onUpvote, user, onLogout }: { issues: Issue[], onUpvote: (id: string | number) => void, user: any, onLogout: () => void }) => {
-  const userIssues = issues.filter(issue => issue.user_id === user?.$id);
+const ProfileView = ({ issues, onUpvote, user, onLogout, onDeleteIssue, onProfileClick, isPublic = false, targetUser = null }: { issues: Issue[], onUpvote: (id: string | number) => void, user: any, onLogout?: () => void, onDeleteIssue?: (id: string | number) => void, onProfileClick: (username: string) => void, isPublic?: boolean, targetUser?: any }) => {
+  const [activeTab, setActiveTab] = useState<'REPORTS' | 'LIKED' | 'FOLLOWING'>('REPORTS');
+  const displayUser = isPublic ? targetUser : user;
+  const username = displayUser?.name || displayUser?.user_id || (typeof displayUser === 'string' ? displayUser : 'User');
+
+  const userIssues = issues.filter(issue => issue.user_id === username);
   const totalUpvotes = userIssues.reduce((sum, issue) => sum + issue.upvotes, 0);
   const resolvedIssues = userIssues.filter(issue => issue.status === 'RESOLVED').length;
 
   return (
     <div className="pb-20 pt-4 md:pt-24 md:pl-24 min-h-screen bg-gray-50">
       <div className="max-w-xl mx-auto px-4">
+        {/* Back Button for Public Profile */}
+        {isPublic && (
+          <button
+            onClick={() => onProfileClick('')}
+            className="mb-4 flex items-center gap-1 text-teal-600 font-bold text-sm"
+          >
+            <ChevronRight size={20} className="rotate-180" />
+            Back to Feed
+          </button>
+        )}
+
         {/* Profile Header */}
         <div className="flex flex-col items-center mb-8 bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
           <div className="w-24 h-24 bg-gradient-to-tr from-teal-400 to-teal-600 rounded-full flex items-center justify-center text-white text-3xl font-bold mb-4 shadow-lg shadow-teal-200">
-            {user?.name?.charAt(0) || 'U'}
+            {username.charAt(0).toUpperCase()}
           </div>
-          <h1 className="text-2xl font-bold">{user?.name || 'User'}</h1>
-          <p className="text-gray-500 text-sm">{user?.email}</p>
-          <button
-            onClick={onLogout}
-            className="mt-4 px-6 py-2 bg-red-50 text-red-600 rounded-xl text-sm font-bold border border-red-100 hover:bg-red-100 transition-colors"
-          >
-            Logout
-          </button>
+          <h1 className="text-2xl font-bold">{username}</h1>
+          {displayUser?.email && !isPublic && <p className="text-gray-500 text-sm">{displayUser.email}</p>}
+
+          {!isPublic && onLogout && (
+            <button
+              onClick={onLogout}
+              className="mt-4 px-6 py-2 bg-red-50 text-red-600 rounded-xl text-sm font-bold border border-red-100 hover:bg-red-100 transition-colors"
+            >
+              Logout
+            </button>
+          )}
+
+          {isPublic && (
+            <button className="mt-4 px-8 py-2 bg-teal-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-teal-200 active:scale-95 transition-transform">
+              Follow
+            </button>
+          )}
+
           <div className="flex gap-2 mt-4">
             <span className="bg-blue-50 text-blue-600 px-3 py-1 rounded-full text-xs font-bold border border-blue-100">Verified Citizen</span>
-            <span className="bg-teal-50 text-teal-600 px-3 py-1 rounded-full text-xs font-bold border border-teal-100">Top Contributor</span>
           </div>
         </div>
 
@@ -711,21 +854,52 @@ const ProfileView = ({ issues, onUpvote, user, onLogout }: { issues: Issue[], on
           </div>
         </div>
 
-        {/* User Issues Tab */}
+        {/* Tabs */}
+        <div className="flex border-b border-gray-200 mb-6 gap-8 px-2">
+          {['REPORTS', 'LIKED', 'FOLLOWING'].map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab as any)}
+              className={cn(
+                "pb-2 text-xs font-bold uppercase tracking-widest transition-colors relative",
+                activeTab === tab ? "text-teal-600" : "text-gray-400"
+              )}
+            >
+              {tab}
+              {activeTab === tab && (
+                <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-600" />
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Content */}
         <div className="mb-6">
-          <h2 className="text-lg font-bold mb-4 px-2 text-gray-800">Your Reports</h2>
           <div className="space-y-4">
-            {userIssues.length === 0 ? (
-              <div className="text-center py-10 bg-white rounded-3xl border border-dashed border-gray-200">
-                <p className="text-gray-400 font-medium">You haven't reported any issues yet.</p>
-                <button className="text-teal-600 font-bold text-sm mt-2">Create your first report</button>
-              </div>
-            ) : (
-              <div className="space-y-6">
-                {userIssues.map(issue => (
-                  <IssueCard key={issue.id} issue={issue} onUpvote={onUpvote} />
-                ))}
-              </div>
+            {activeTab === 'REPORTS' && (
+              userIssues.length === 0 ? (
+                <div className="text-center py-10 bg-white rounded-3xl border border-dashed border-gray-200">
+                  <p className="text-gray-400 font-medium">No reports found.</p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {userIssues.map(issue => (
+                    <IssueCard
+                      key={issue.id}
+                      issue={issue}
+                      onUpvote={onUpvote}
+                      onDelete={!isPublic ? onDeleteIssue : undefined}
+                      onProfileClick={onProfileClick}
+                    />
+                  ))}
+                </div>
+              )
+            )}
+            {activeTab === 'LIKED' && (
+              <div className="text-center py-10 text-gray-400">Liked posts will appear here.</div>
+            )}
+            {activeTab === 'FOLLOWING' && (
+              <div className="text-center py-10 text-gray-400">Following list will appear here.</div>
             )}
           </div>
         </div>
@@ -741,6 +915,21 @@ export default function App() {
   const [issues, setIssues] = useState<Issue[]>([]);
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
+  const [userLocation, setUserLocation] = useState<{ lat: number, lng: number } | null>(null);
+  const [selectedProfileUser, setSelectedProfileUser] = useState<string | null>(null);
+
+  const handleProfileClick = (username: string) => {
+    if (!username) {
+      setSelectedProfileUser(null);
+      return;
+    }
+    if (username === user?.name) {
+      setView('PROFILE');
+      setSelectedProfileUser(null);
+    } else {
+      setSelectedProfileUser(username);
+    }
+  };
 
   const checkUserSession = async () => {
     try {
@@ -794,6 +983,23 @@ export default function App() {
   useEffect(() => {
     checkUserSession();
     fetchIssues();
+
+    // Detect user location
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const loc = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          };
+          setUserLocation(loc);
+          console.log("User location detected:", loc);
+        },
+        (error) => {
+          console.warn("Geolocation permission denied or error:", error);
+        }
+      );
+    }
   }, []);
 
   const handleLogout = async () => {
@@ -849,6 +1055,21 @@ export default function App() {
     }
   };
 
+  const handleDeleteIssue = async (id: number | string) => {
+    if (!window.confirm("Are you sure you want to delete this report?")) return;
+
+    // Optimistic UI update
+    setIssues(issues.filter(issue => issue.id !== id));
+
+    try {
+      await databases.deleteDocument(DATABASE_ID, COLLECTION_ID, id.toString());
+    } catch (error) {
+      console.error('Failed to delete issue in Appwrite', error);
+      alert("Failed to delete issue.");
+      fetchIssues();
+    }
+  };
+
   const handleIssueCreated = async (newIssueData: Omit<Issue, 'id'>, imageFile?: File | null) => {
     try {
       setLoading(true);
@@ -864,6 +1085,7 @@ export default function App() {
             imageFile
           );
           // Generate the cloud URL for the document
+          // @ts-ignore
           finalImageUrl = `${import.meta.env.VITE_APPWRITE_ENDPOINT}/storage/buckets/${BUCKET_ID}/files/${uploadedFile.$id}/view?project=${import.meta.env.VITE_APPWRITE_PROJECT_ID}`;
           console.log("Image uploaded to Appwrite Storage:", finalImageUrl);
         } catch (uploadError) {
@@ -922,11 +1144,25 @@ export default function App() {
           </div>
         ) : (
           <AnimatePresence mode="wait">
-            {view === 'FEED' && <FeedView key="feed" issues={issues} onUpvote={handleUpvote} />}
-            {view === 'MAP' && <HeatMapView key="map" issues={issues} onUpvote={handleUpvote} />}
-            {view === 'CREATE' && <CreateView key="create" onIssueCreated={handleIssueCreated} />}
-            {view === 'DASHBOARD' && <DashboardView key="dashboard" issues={issues} onStatusUpdate={handleStatusUpdate} />}
-            {view === 'PROFILE' && <ProfileView key="profile" issues={issues} onUpvote={handleUpvote} user={user} onLogout={handleLogout} />}
+            {selectedProfileUser ? (
+              <ProfileView
+                key="public-profile"
+                issues={issues}
+                onUpvote={handleUpvote}
+                user={user}
+                onProfileClick={handleProfileClick}
+                isPublic={true}
+                targetUser={{ name: selectedProfileUser }}
+              />
+            ) : (
+              <>
+                {view === 'FEED' && <FeedView key="feed" issues={issues} onUpvote={handleUpvote} user={user} onProfileClick={handleProfileClick} />}
+                {view === 'MAP' && <HeatMapView key="map" issues={issues} onProfileClick={handleProfileClick} userLocation={userLocation} />}
+                {view === 'CREATE' && <CreateView key="create" onIssueCreated={handleIssueCreated} user={user} initialLocation={userLocation} />}
+                {view === 'DASHBOARD' && <DashboardView key="dashboard" issues={issues} onStatusUpdate={handleStatusUpdate} onProfileClick={handleProfileClick} />}
+                {view === 'PROFILE' && <ProfileView key="profile" issues={issues} onUpvote={handleUpvote} user={user} onLogout={handleLogout} onDeleteIssue={handleDeleteIssue} onProfileClick={handleProfileClick} />}
+              </>
+            )}
           </AnimatePresence>
         )}
       </main>
