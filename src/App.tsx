@@ -69,8 +69,10 @@ const fetchMunicipalities = async (): Promise<Municipality[]> => {
 const checkAdminStatus = async (email: string): Promise<'super' | 'approved' | 'pending' | 'none'> => {
   if (email === SUPER_ADMIN_EMAIL) return 'super';
   try {
-    const response = await databases.listDocuments(DATABASE_ID, ADMINS_COLLECTION_ID, [Query.equal('email', email)]);
-    if (response.documents.length > 0) return response.documents[0].status as any;
+    // Fetch all admins and filter client-side to avoid needing an Appwrite Index on the 'email' attribute
+    const response = await databases.listDocuments(DATABASE_ID, ADMINS_COLLECTION_ID);
+    const foundAdmin = response.documents.find(doc => doc.email === email);
+    if (foundAdmin) return foundAdmin.status as any;
   } catch (e) {
     console.error('Error checking admin status', e);
   }
