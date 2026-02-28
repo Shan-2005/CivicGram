@@ -1793,9 +1793,9 @@ export default function App() {
           <div className="w-16 h-16 bg-yellow-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
             <Clock size={32} className="text-yellow-600" />
           </div>
-          <h2 className="text-xl font-bold text-gray-900 mb-2">Awaiting Approval</h2>
-          <p className="text-gray-500 text-sm mb-6">Your admin registration is pending approval from the super admin. You'll get access once approved.</p>
-          <button onClick={handleLogout} className="bg-gray-900 text-white px-6 py-3 rounded-2xl font-bold text-sm hover:bg-gray-800 transition-all">Back to Login</button>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Request Sent</h2>
+          <p className="text-gray-500 text-sm mb-6">Your request has been sent! Please wait until the super admin approves it. Once approved, you can come back and login again to access the dashboard.</p>
+          <button onClick={handleLogout} className="bg-gray-900 text-white px-6 py-3 rounded-2xl font-bold text-sm hover:bg-gray-800 transition-all">Go Back and Login Again</button>
         </div>
       </div>
     );
