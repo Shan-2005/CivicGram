@@ -18,6 +18,7 @@
     "@vitejs/plugin-react": "^5.0.4",
     "appwrite": "^22.4.1",
     "better-sqlite3": "^12.4.1",
+    "browser-image-compression": "^2.0.2",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "dotenv": "^17.3.1",

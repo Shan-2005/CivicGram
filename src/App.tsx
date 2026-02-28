@@ -33,6 +33,7 @@ import { cn, formatTimeAgo } from './utils';
 import { analyzeIssueImage, verifyImageAgainstDescription } from './services/aiService';
 import { databases, storage, account, DATABASE_ID, COLLECTION_ID, COMMENTS_COLLECTION_ID, BUCKET_ID, ID, Query } from './lib/appwrite';
 import MapComponent from './components/MapComponent';
+import imageCompression from 'browser-image-compression';
 
 // --- Components ---
 
@@ -1309,10 +1310,21 @@ export default function App() {
       // Handle Image Upload to Appwrite Storage if we have a file
       if (imageFile) {
         try {
+          // Compress the image before uploading to save Appwrite storage limits
+          const options = {
+            maxSizeMB: 0.5, // 500 KB limit
+            maxWidthOrHeight: 1920,
+            useWebWorker: true,
+          };
+
+          console.log(`Original file size: ${(imageFile.size / 1024 / 1024).toFixed(2)} MB`);
+          const compressedFile = await imageCompression(imageFile, options);
+          console.log(`Compressed file size: ${(compressedFile.size / 1024 / 1024).toFixed(2)} MB`);
+
           const uploadedFile = await storage.createFile(
             BUCKET_ID,
             ID.unique(),
-            imageFile
+            compressedFile // Now uploading the compressed version!
           );
           // Generate the cloud URL for the document
           // @ts-ignore
