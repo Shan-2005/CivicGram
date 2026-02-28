@@ -132,11 +132,12 @@ export const verifyImageAgainstDescription = async (
     }
 
     return parsed;
-  } catch (error) {
+  } catch (error: any) {
     console.error("AI Verification failed:", error);
+    alert(`AI Verification Error: ${error?.message || JSON.stringify(error)}`);
     return {
       isValid: true,
-      reason: "Verification system timeout or configuration missing - proceeding with caution.",
+      reason: `Verification system timeout or configuration missing: ${error?.message} - proceeding with caution.`,
       category: "Other",
       priority: "MEDIUM",
       title: "Manual Verification Required",
