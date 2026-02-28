@@ -28,10 +28,10 @@ import {
   Car as Road
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Issue, ViewType } from './types';
+import { Issue, ViewType, Comment } from './types';
 import { cn, formatTimeAgo } from './utils';
 import { analyzeIssueImage, verifyImageAgainstDescription } from './services/aiService';
-import { databases, storage, account, DATABASE_ID, COLLECTION_ID, BUCKET_ID, ID, Query } from './lib/appwrite';
+import { databases, storage, account, DATABASE_ID, COLLECTION_ID, COMMENTS_COLLECTION_ID, BUCKET_ID, ID, Query } from './lib/appwrite';
 import MapComponent from './components/MapComponent';
 
 // --- Components ---
@@ -172,7 +172,25 @@ const LoginView = ({ onLogin }: { onLogin: () => void }) => {
   );
 };
 
-const IssueCard = ({ issue, onUpvote, onDelete, onProfileClick }: { key?: React.Key, issue: Issue, onUpvote: (id: string | number) => void, onDelete?: (id: string | number) => void, onProfileClick?: (username: string) => void }) => {
+const IssueCard = ({ issue, onUpvote, onDelete, onProfileClick, onCommentClick }: { key?: React.Key, issue: Issue, onUpvote: (id: string | number) => void, onDelete?: (id: string | number) => void, onProfileClick?: (username: string) => void, onCommentClick?: (id: string | number) => void }) => {
+  const handleShare = async () => {
+    const url = `${window.location.origin}/?issue=${issue.id}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `CivicGram Issue: ${issue.title}`,
+          text: issue.description,
+          url: url,
+        });
+      } catch (err) {
+        console.error("Error sharing:", err);
+      }
+    } else {
+      navigator.clipboard.writeText(url);
+      alert("Link copied to clipboard!");
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -245,10 +263,10 @@ const IssueCard = ({ issue, onUpvote, onDelete, onProfileClick }: { key?: React.
               <ArrowBigUp size={28} />
               <span className="font-bold text-sm">{issue.upvotes}</span>
             </button>
-            <button className="text-gray-700 hover:text-teal-600">
+            <button onClick={() => onCommentClick?.(issue.id)} className="text-gray-700 hover:text-teal-600 transition-colors">
               <MessageCircle size={24} />
             </button>
-            <button className="text-gray-700 hover:text-teal-600">
+            <button onClick={handleShare} className="text-gray-700 hover:text-teal-600 transition-colors">
               <Share2 size={24} />
             </button>
           </div>
@@ -262,8 +280,8 @@ const IssueCard = ({ issue, onUpvote, onDelete, onProfileClick }: { key?: React.
           <p className="text-gray-600 mt-1 text-xs line-clamp-2">{issue.description}</p>
         </div>
 
-        {issue.comment_count > 0 && (
-          <button className="text-gray-400 text-xs mt-2">
+        {issue.comment_count >= 0 && (
+          <button onClick={() => onCommentClick?.(issue.id)} className="text-gray-400 text-xs mt-2 hover:text-gray-600 transition-colors">
             View all {issue.comment_count} comments
           </button>
         )}
@@ -272,7 +290,7 @@ const IssueCard = ({ issue, onUpvote, onDelete, onProfileClick }: { key?: React.
   );
 };
 
-const FeedView = ({ issues, onUpvote, user, onProfileClick }: { key?: React.Key, issues: Issue[], onUpvote: (id: string | number) => void, user: any, onProfileClick: (username: string) => void }) => {
+const FeedView = ({ issues, onUpvote, user, onProfileClick, onCommentClick }: { key?: React.Key, issues: Issue[], onUpvote: (id: string | number) => void, user: any, onProfileClick: (username: string) => void, onCommentClick?: (id: string | number) => void }) => {
   const [activeCategory, setActiveCategory] = useState<string>('All');
 
   const filteredIssues = activeCategory === 'All'
@@ -859,7 +877,7 @@ const DashboardView = ({ issues, onStatusUpdate, onProfileClick }: { key?: React
   );
 };
 
-const ProfileView = ({ issues, onUpvote, user, onLogout, onDeleteIssue, onProfileClick, isPublic = false, targetUser = null }: { key?: React.Key, issues: Issue[], onUpvote: (id: string | number) => void, user: any, onLogout?: () => void, onDeleteIssue?: (id: string | number) => void, onProfileClick: (username: string) => void, isPublic?: boolean, targetUser?: any }) => {
+const ProfileView = ({ issues, onUpvote, user, onLogout, onDeleteIssue, onProfileClick, onCommentClick, isPublic = false, targetUser = null }: { key?: React.Key, issues: Issue[], onUpvote: (id: string | number) => void, user: any, onLogout?: () => void, onDeleteIssue?: (id: string | number) => void, onProfileClick: (username: string) => void, onCommentClick?: (id: string | number) => void, isPublic?: boolean, targetUser?: any }) => {
   const [activeTab, setActiveTab] = useState<'REPORTS' | 'LIKED' | 'FOLLOWING'>('REPORTS');
   const displayUser = isPublic ? targetUser : user;
   const username = displayUser?.name || displayUser?.user_id || (typeof displayUser === 'string' ? displayUser : 'User');
@@ -962,6 +980,7 @@ const ProfileView = ({ issues, onUpvote, user, onLogout, onDeleteIssue, onProfil
                       onUpvote={onUpvote}
                       onDelete={!isPublic ? onDeleteIssue : undefined}
                       onProfileClick={onProfileClick}
+                      onCommentClick={onCommentClick}
                     />
                   ))}
                 </div>
@@ -980,6 +999,144 @@ const ProfileView = ({ issues, onUpvote, user, onLogout, onDeleteIssue, onProfil
   );
 };
 
+// --- Comments Modal ---
+const CommentsModal = ({ issueId, onClose, currentUser }: { issueId: string | number, onClose: () => void, currentUser: any }) => {
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [newText, setNewText] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(true);
+
+  useEffect(() => {
+    const fetchComments = async () => {
+      try {
+        if (!COMMENTS_COLLECTION_ID || COMMENTS_COLLECTION_ID === '') {
+          console.warn("COMMENTS_COLLECTION_ID not set, simulating empty comments.");
+          setFetching(false);
+          return;
+        }
+        const res = await databases.listDocuments(DATABASE_ID, COMMENTS_COLLECTION_ID, [
+          Query.equal('issue_id', issueId.toString()),
+          Query.orderDesc('created_at')
+        ]);
+        setComments(res.documents.map((d: any) => ({
+          id: d.$id,
+          issue_id: d.issue_id,
+          user_id: d.user_id,
+          text: d.text,
+          created_at: d.created_at
+        })));
+      } catch (err) {
+        console.error("Failed to fetch comments", err);
+      } finally {
+        setFetching(false);
+      }
+    };
+    fetchComments();
+  }, [issueId]);
+
+  const handlePost = async () => {
+    if (!newText.trim()) return;
+
+    if (!COMMENTS_COLLECTION_ID || COMMENTS_COLLECTION_ID === '') {
+      alert("Comments collection is not configured in .env.local yet!");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const payload = {
+        issue_id: issueId.toString(),
+        user_id: currentUser?.name || 'anonymous',
+        text: newText.trim(),
+        created_at: new Date().toISOString()
+      };
+      const res = await databases.createDocument(DATABASE_ID, COMMENTS_COLLECTION_ID, 'unique()', payload);
+      setComments([{
+        id: res.$id,
+        issue_id: res.issue_id,
+        user_id: res.user_id,
+        text: res.text,
+        created_at: res.created_at
+      } as Comment, ...comments]);
+      setNewText('');
+
+      // Update comment count on issue in background
+      try {
+        const issueRes = await databases.getDocument(DATABASE_ID, COLLECTION_ID, issueId.toString());
+        await databases.updateDocument(DATABASE_ID, COLLECTION_ID, issueId.toString(), {
+          comment_count: (issueRes.comment_count || 0) + 1
+        });
+      } catch (e) { console.error("Could not update comment count on issue") }
+
+    } catch (err) {
+      console.error(err);
+      alert("Failed to post comment.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[2000] flex items-end md:items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
+      <motion.div
+        initial={{ y: "100%", opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        exit={{ y: "100%", opacity: 0 }}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white w-full md:w-[400px] md:h-[600px] h-[80vh] rounded-t-3xl md:rounded-3xl flex flex-col shadow-2xl relative"
+      >
+        {/* Header */}
+        <div className="flex justify-between items-center p-4 border-b border-gray-100">
+          <h3 className="font-bold text-lg">Comments</h3>
+          <button onClick={onClose} className="p-2 bg-gray-50 rounded-full hover:bg-gray-100 text-gray-500">
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* List */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {fetching ? (
+            <div className="text-center text-sm text-gray-400 py-10">Loading comments...</div>
+          ) : comments.length === 0 ? (
+            <div className="text-center text-sm text-gray-400 py-10">No comments yet. Be the first to start the discussion!</div>
+          ) : (
+            comments.map(c => (
+              <div key={c.id} className="flex gap-3">
+                <div className="w-8 h-8 rounded-full bg-teal-100 flex items-center justify-center text-teal-800 font-bold text-xs shrink-0">
+                  {c.user_id.substring(0, 2).toUpperCase()}
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-gray-800">{c.user_id} <span className="text-[10px] font-normal text-gray-400 ml-1">{formatTimeAgo(c.created_at)}</span></p>
+                  <p className="text-sm text-gray-600 mt-1">{c.text}</p>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Input */}
+        <div className="p-4 border-t border-gray-100 bg-gray-50 md:rounded-b-3xl flex gap-2">
+          <input
+            type="text"
+            value={newText}
+            onChange={e => setNewText(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handlePost()}
+            placeholder="Add a comment..."
+            className="flex-1 bg-white border border-gray-200 rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+          />
+          <button
+            onClick={handlePost}
+            disabled={loading || !newText.trim()}
+            className="bg-teal-600 text-white rounded-full px-4 font-bold text-sm disabled:opacity-50 transition-opacity flex items-center justify-center"
+          >
+            {loading ? '...' : 'Post'}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
 // --- Main App ---
 
 export default function App() {
@@ -989,6 +1146,7 @@ export default function App() {
   const [user, setUser] = useState<any>(null);
   const [userLocation, setUserLocation] = useState<{ lat: number, lng: number } | null>(null);
   const [selectedProfileUser, setSelectedProfileUser] = useState<string | null>(null);
+  const [activeCommentsIssueId, setActiveCommentsIssueId] = useState<string | number | null>(null);
 
   const handleProfileClick = (username: string) => {
     if (!username) {
@@ -1228,16 +1386,26 @@ export default function App() {
               />
             ) : (
               <>
-                {view === 'FEED' && <FeedView key="feed" issues={issues} onUpvote={handleUpvote} user={user} onProfileClick={handleProfileClick} />}
+                {view === 'FEED' && <FeedView key="feed" issues={issues} onUpvote={handleUpvote} user={user} onProfileClick={handleProfileClick} onCommentClick={setActiveCommentsIssueId} />}
                 {view === 'MAP' && <HeatMapView key="map" issues={issues} onProfileClick={handleProfileClick} userLocation={userLocation} />}
                 {view === 'CREATE' && <CreateView key="create" onIssueCreated={handleIssueCreated} user={user} initialLocation={userLocation} />}
                 {view === 'DASHBOARD' && <DashboardView key="dashboard" issues={issues} onStatusUpdate={handleStatusUpdate} onProfileClick={handleProfileClick} />}
-                {view === 'PROFILE' && <ProfileView key="profile" issues={issues} onUpvote={handleUpvote} user={user} onLogout={handleLogout} onDeleteIssue={handleDeleteIssue} onProfileClick={handleProfileClick} />}
+                {view === 'PROFILE' && <ProfileView key="profile" issues={issues} onUpvote={handleUpvote} user={user} onLogout={handleLogout} onDeleteIssue={handleDeleteIssue} onProfileClick={handleProfileClick} onCommentClick={setActiveCommentsIssueId} />}
               </>
             )}
           </AnimatePresence>
         )}
       </main>
+
+      <AnimatePresence>
+        {activeCommentsIssueId && (
+          <CommentsModal
+            issueId={activeCommentsIssueId}
+            currentUser={user}
+            onClose={() => setActiveCommentsIssueId(null)}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Global CSS for no-scrollbar */}
       <style dangerouslySetInnerHTML={{
