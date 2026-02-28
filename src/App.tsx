@@ -40,7 +40,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Issue, ViewType, Comment, AdminUser, Municipality, AdminViewTab } from './types';
 import { cn, formatTimeAgo } from './utils';
 import { analyzeIssueImage, verifyImageAgainstDescription } from './services/aiService';
-import { databases, storage, account, DATABASE_ID, COLLECTION_ID, COMMENTS_COLLECTION_ID, ADMINS_COLLECTION_ID, MUNICIPALITIES_COLLECTION_ID, BUCKET_ID, ID, Query } from './lib/appwrite';
+import { client, databases, storage, account, DATABASE_ID, COLLECTION_ID, COMMENTS_COLLECTION_ID, ADMINS_COLLECTION_ID, MUNICIPALITIES_COLLECTION_ID, BUCKET_ID, ID, Query } from './lib/appwrite';
 import MapComponent from './components/MapComponent';
 import imageCompression from 'browser-image-compression';
 
@@ -960,6 +960,19 @@ const AdminDashboardView = ({ issues, user, onStatusUpdate, onLogout }: {
       setIsLoading(false);
     };
     loadData();
+
+    // Subscribe to realtime updates for Admins and Municipalities
+    const unsubscribeAdmins = client.subscribe(`databases.${DATABASE_ID}.collections.${ADMINS_COLLECTION_ID}.documents`, () => {
+      fetchAdmins().then(setAdmins);
+    });
+    const unsubscribeMunis = client.subscribe(`databases.${DATABASE_ID}.collections.${MUNICIPALITIES_COLLECTION_ID}.documents`, () => {
+      fetchMunicipalities().then(setMunicipalities);
+    });
+
+    return () => {
+      unsubscribeAdmins();
+      unsubscribeMunis();
+    };
   }, []);
 
   const filteredIssues = issues.filter(i => {
@@ -1614,6 +1627,16 @@ export default function App() {
     checkUserSession();
     fetchIssues();
 
+    // Realtime Subscriptions for global app state
+    const unsubscribeIssues = client.subscribe(`databases.${DATABASE_ID}.collections.${COLLECTION_ID}.documents`, () => {
+      fetchIssues();
+    });
+
+    const unsubscribeAdmins = client.subscribe(`databases.${DATABASE_ID}.collections.${ADMINS_COLLECTION_ID}.documents`, () => {
+      // Recheck session info in case current user was approved or rejected
+      checkUserSession();
+    });
+
     // Detect user location
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -1630,6 +1653,11 @@ export default function App() {
         }
       );
     }
+
+    return () => {
+      unsubscribeIssues();
+      unsubscribeAdmins();
+    };
   }, []);
 
   const handleLogout = async () => {
