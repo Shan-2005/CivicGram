@@ -34,9 +34,10 @@ export interface Municipality {
 }
 
 export interface AdminUser {
+  id?: string;
   email: string;
   name: string;
-  status: 'approved' | 'pending' | 'rejected';
+  status: 'super' | 'approved' | 'pending' | 'rejected';
   approved_at?: string;
   requested_at: string;
 }

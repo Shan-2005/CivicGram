@@ -40,29 +40,40 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Issue, ViewType, Comment, AdminUser, Municipality, AdminViewTab } from './types';
 import { cn, formatTimeAgo } from './utils';
 import { analyzeIssueImage, verifyImageAgainstDescription } from './services/aiService';
-import { databases, storage, account, DATABASE_ID, COLLECTION_ID, COMMENTS_COLLECTION_ID, BUCKET_ID, ID, Query } from './lib/appwrite';
+import { databases, storage, account, DATABASE_ID, COLLECTION_ID, COMMENTS_COLLECTION_ID, ADMINS_COLLECTION_ID, MUNICIPALITIES_COLLECTION_ID, BUCKET_ID, ID, Query } from './lib/appwrite';
 import MapComponent from './components/MapComponent';
 import imageCompression from 'browser-image-compression';
 
 // --- Admin Constants & Helpers ---
 const SUPER_ADMIN_EMAIL = 'areojoeshan2005@gmail.com';
 
-const getAdmins = (): AdminUser[] => {
-  try { return JSON.parse(localStorage.getItem('civicgram_admins') || '[]'); } catch { return []; }
+const fetchAdmins = async (): Promise<AdminUser[]> => {
+  try {
+    const response = await databases.listDocuments(DATABASE_ID, ADMINS_COLLECTION_ID);
+    return response.documents.map(d => ({
+      id: d.$id, email: d.email, name: d.name, status: d.status,
+      approved_at: d.approved_at, requested_at: d.requested_at
+    }));
+  } catch (e) { console.error('Error fetching admins', e); return []; }
 };
-const saveAdmins = (admins: AdminUser[]) => localStorage.setItem('civicgram_admins', JSON.stringify(admins));
 
-const getMunicipalities = (): Municipality[] => {
-  try { return JSON.parse(localStorage.getItem('civicgram_municipalities') || '[]'); } catch { return []; }
+const fetchMunicipalities = async (): Promise<Municipality[]> => {
+  try {
+    const response = await databases.listDocuments(DATABASE_ID, MUNICIPALITIES_COLLECTION_ID);
+    return response.documents.map(d => ({
+      id: d.$id, name: d.name, area: d.area, contact: d.contact
+    }));
+  } catch (e) { console.error('Error fetching municipalities', e); return []; }
 };
-const saveMunicipalities = (m: Municipality[]) => localStorage.setItem('civicgram_municipalities', JSON.stringify(m));
 
-const isAdminUser = (email: string): 'super' | 'approved' | 'pending' | 'none' => {
+const checkAdminStatus = async (email: string): Promise<'super' | 'approved' | 'pending' | 'none'> => {
   if (email === SUPER_ADMIN_EMAIL) return 'super';
-  const admins = getAdmins();
-  const found = admins.find(a => a.email === email);
-  if (found?.status === 'approved') return 'approved';
-  if (found?.status === 'pending') return 'pending';
+  try {
+    const response = await databases.listDocuments(DATABASE_ID, ADMINS_COLLECTION_ID, [Query.equal('email', email)]);
+    if (response.documents.length > 0) return response.documents[0].status as any;
+  } catch (e) {
+    console.error('Error checking admin status', e);
+  }
   return 'none';
 };
 
@@ -929,10 +940,25 @@ const AdminDashboardView = ({ issues, user, onStatusUpdate, onLogout }: {
   const [filterPriority, setFilterPriority] = useState('ALL');
   const [filterCategory, setFilterCategory] = useState('ALL');
   const [filterStatus, setFilterStatus] = useState('ALL');
-  const [admins, setAdmins] = useState<AdminUser[]>(getAdmins());
-  const [municipalities, setMunicipalities] = useState<Municipality[]>(getMunicipalities());
+  const [admins, setAdmins] = useState<AdminUser[]>([]);
+  const [municipalities, setMunicipalities] = useState<Municipality[]>([]);
   const [newMuni, setNewMuni] = useState({ name: '', area: '', contact: '' });
+  const [isLoading, setIsLoading] = useState(true);
   const isSuperAdmin = user?.email === SUPER_ADMIN_EMAIL;
+
+  useEffect(() => {
+    const loadData = async () => {
+      setIsLoading(true);
+      const [fetchedAdmins, fetchedMunis] = await Promise.all([
+        fetchAdmins(),
+        fetchMunicipalities()
+      ]);
+      setAdmins(fetchedAdmins);
+      setMunicipalities(fetchedMunis);
+      setIsLoading(false);
+    };
+    loadData();
+  }, []);
 
   const filteredIssues = issues.filter(i => {
     if (filterPriority !== 'ALL' && i.priority !== filterPriority) return false;
@@ -956,29 +982,50 @@ const AdminDashboardView = ({ issues, user, onStatusUpdate, onLogout }: {
     a.click(); URL.revokeObjectURL(url);
   };
 
-  const approveAdmin = (email: string) => {
-    const updated = admins.map(a => a.email === email ? { ...a, status: 'approved' as const, approved_at: new Date().toISOString() } : a);
-    setAdmins(updated); saveAdmins(updated);
+  const approveAdmin = async (email: string) => {
+    const admin = admins.find(a => a.email === email);
+    if (!admin || !admin.id) return;
+    try {
+      await databases.updateDocument(DATABASE_ID, ADMINS_COLLECTION_ID, admin.id, {
+        status: 'approved',
+        approved_at: new Date().toISOString()
+      });
+      setAdmins(admins.map(a => a.email === email ? { ...a, status: 'approved' as const, approved_at: new Date().toISOString() } : a));
+    } catch (e) { console.error('Failed to approve admin', e); alert('Failed to approve admin'); }
   };
-  const rejectAdmin = (email: string) => {
-    const updated = admins.filter(a => a.email !== email);
-    setAdmins(updated); saveAdmins(updated);
+
+  const rejectAdmin = async (email: string) => {
+    const admin = admins.find(a => a.email === email);
+    if (!admin || !admin.id) return;
+    if (!window.confirm("Are you sure you want to reject and delete this admin request?")) return;
+    try {
+      await databases.deleteDocument(DATABASE_ID, ADMINS_COLLECTION_ID, admin.id);
+      setAdmins(admins.filter(a => a.email !== email));
+    } catch (e) { console.error('Failed to reject admin', e); alert('Failed to reject admin'); }
   };
-  const addMunicipality = () => {
+
+  const addMunicipality = async () => {
     if (!newMuni.name.trim()) return;
-    const m: Municipality = { id: Date.now().toString(), ...newMuni };
-    const updated = [...municipalities, m];
-    setMunicipalities(updated); saveMunicipalities(updated);
-    setNewMuni({ name: '', area: '', contact: '' });
+    try {
+      const response = await databases.createDocument(DATABASE_ID, MUNICIPALITIES_COLLECTION_ID, 'unique()', newMuni);
+      const m: Municipality = { id: response.$id, ...newMuni };
+      setMunicipalities([...municipalities, m]);
+      setNewMuni({ name: '', area: '', contact: '' });
+    } catch (e) { console.error('Failed to add municipality', e); alert('Failed to add municipality. Have you created the collection?'); }
   };
-  const deleteMunicipality = (id: string) => {
-    const updated = municipalities.filter(m => m.id !== id);
-    setMunicipalities(updated); saveMunicipalities(updated);
+
+  const deleteMunicipality = async (id: string) => {
+    if (!window.confirm("Are you sure you want to delete this municipality?")) return;
+    try {
+      await databases.deleteDocument(DATABASE_ID, MUNICIPALITIES_COLLECTION_ID, id);
+      setMunicipalities(municipalities.filter(m => m.id !== id));
+    } catch (e) { console.error('Failed to delete municipality', e); alert('Failed to delete municipality'); }
   };
+
   const assignMunicipality = async (issueId: string | number, muniName: string) => {
     try {
       await databases.updateDocument(DATABASE_ID, COLLECTION_ID, issueId as string, { assigned_municipality: muniName });
-    } catch { console.warn('Municipality assignment saved locally only.'); }
+    } catch { console.warn('Municipality assignment failed.'); alert('Assignment failed'); }
   };
 
   const tabs: { id: AdminViewTab, label: string, icon: React.ReactNode }[] = [
@@ -1490,42 +1537,29 @@ export default function App() {
       const session = await account.get();
       setUser(session);
 
-      // Check if user logged in via the admin button (fresh OAuth redirect)
+      // Check their status in Appwrite unconditionally
+      const adminStatus = await checkAdminStatus(session.email);
       const loginMode = localStorage.getItem('civicgram_login_mode');
-      if (loginMode === 'admin') {
+
+      if (adminStatus === 'super' || adminStatus === 'approved') {
+        setIsAdminMode(true);
+      } else if (adminStatus === 'pending') {
+        setAdminPending(true);
+      } else if (loginMode === 'admin') {
+        // New admin request — add to pending list in Appwrite
+        try {
+          await databases.createDocument(DATABASE_ID, ADMINS_COLLECTION_ID, 'unique()', {
+            email: session.email, name: session.name, status: 'pending', requested_at: new Date().toISOString()
+          });
+        } catch (e) {
+          console.error('Failed to create admin request', e);
+        }
+        setAdminPending(true);
+      }
+
+      // Clean up the temporary login flag
+      if (loginMode) {
         localStorage.removeItem('civicgram_login_mode');
-        const adminStatus = isAdminUser(session.email);
-
-        // Always set the active flag when they log in via Admin button
-        localStorage.setItem('civicgram_admin_active', session.email);
-
-        if (adminStatus === 'super' || adminStatus === 'approved') {
-          setIsAdminMode(true);
-        } else if (adminStatus === 'pending') {
-          setAdminPending(true);
-        } else {
-          // New admin request — add to pending list
-          const admins = getAdmins();
-          if (!admins.find(a => a.email === session.email)) {
-            admins.push({ email: session.email, name: session.name, status: 'pending', requested_at: new Date().toISOString() });
-            saveAdmins(admins);
-          }
-          setAdminPending(true);
-        }
-      } else {
-        // Page reload — check if this user was previously in admin mode
-        const savedAdminEmail = localStorage.getItem('civicgram_admin_active');
-        if (savedAdminEmail && savedAdminEmail === session.email) {
-          const adminStatus = isAdminUser(session.email);
-          if (adminStatus === 'super' || adminStatus === 'approved') {
-            setIsAdminMode(true);
-          } else if (adminStatus === 'pending') {
-            setAdminPending(true);
-          } else {
-            // Logged in as admin but not in the list? Should be pending.
-            setAdminPending(true);
-          }
-        }
       }
     } catch (error) {
       setUser(null);
